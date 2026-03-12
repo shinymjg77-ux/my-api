@@ -18,6 +18,7 @@ interface AdminShellProps {
 
 const navItems = [
   { href: "/dashboard", label: "Dashboard" },
+  { href: "/runtime", label: "Runtime" },
   { href: "/apis", label: "APIs" },
   { href: "/db-connections", label: "DB Connections" },
   { href: "/logs", label: "Logs" },
