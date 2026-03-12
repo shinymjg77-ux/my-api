@@ -1,6 +1,7 @@
 import Link from "next/link";
 
 import { DashboardRefreshControls } from "@/components/dashboard-refresh-controls";
+import { DonutMetricCard } from "@/components/donut-metric-card";
 import { EmptyState } from "@/components/empty-state";
 import { PageHeader } from "@/components/page-header";
 import { SectionCard } from "@/components/section-card";
@@ -8,7 +9,7 @@ import { StatusBadge } from "@/components/status-badge";
 import { SummaryCard } from "@/components/summary-card";
 import { formatBytes, formatCount, formatDateTime, formatDuration, formatPercent, formatStatusCode } from "@/lib/format";
 import { getDashboardSummary, getOpsDashboard } from "@/lib/server-api";
-import type { HostMetricStatus, OpsProcessAttentionLevel, OpsProcessStatus } from "@/lib/types";
+import type { OpsProcessAttentionLevel, OpsProcessStatus } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
 
@@ -29,20 +30,6 @@ function toneForAttention(level: OpsProcessAttentionLevel) {
   }
   if (level === "warning") {
     return "warning";
-  }
-  return "success";
-}
-
-
-function toneForMetricStatus(status: HostMetricStatus) {
-  if (status === "critical") {
-    return "danger";
-  }
-  if (status === "warning") {
-    return "warning";
-  }
-  if (status === "unavailable") {
-    return "muted";
   }
   return "success";
 }
@@ -138,43 +125,49 @@ export default async function DashboardPage() {
 
       <SectionCard title="서버 리소스" description="호스트 전체 CPU, 메모리, 루트 볼륨 사용량을 20초 단위로 새로 읽어옵니다.">
         <div className="grid gap-4 lg:grid-cols-3">
-          <SummaryCard
+          <DonutMetricCard
             label="Host CPU"
-            value={formatPercent(overview.host_metrics.cpu.usage_percent)}
-            hint={
+            primaryValue={formatPercent(overview.host_metrics.cpu.usage_percent)}
+            secondaryText="서버 전체 CPU 사용률"
+            footnote={
               overview.host_metrics.cpu.status === "unavailable"
                 ? "현재 CPU 사용률을 읽지 못했습니다."
-                : "서버 전체 CPU 사용률"
+                : "20초마다 갱신되는 호스트 스냅샷"
             }
-            accent={<StatusBadge tone={toneForMetricStatus(overview.host_metrics.cpu.status)}>{overview.host_metrics.cpu.status}</StatusBadge>}
+            status={overview.host_metrics.cpu.status}
+            usagePercent={overview.host_metrics.cpu.usage_percent}
           />
-          <SummaryCard
+          <DonutMetricCard
             label="Host Memory"
-            value={
+            primaryValue={formatPercent(overview.host_metrics.memory.usage_percent)}
+            secondaryText={
               overview.host_metrics.memory.used_bytes === null || overview.host_metrics.memory.total_bytes === null
                 ? "-"
                 : `${formatBytes(overview.host_metrics.memory.used_bytes)} / ${formatBytes(overview.host_metrics.memory.total_bytes)}`
             }
-            hint={
+            footnote={
               overview.host_metrics.memory.status === "unavailable"
                 ? "현재 메모리 사용량을 읽지 못했습니다."
-                : `가용 ${formatBytes(overview.host_metrics.memory.available_bytes)} · 사용률 ${formatPercent(overview.host_metrics.memory.usage_percent)}`
+                : `가용 ${formatBytes(overview.host_metrics.memory.available_bytes)}`
             }
-            accent={<StatusBadge tone={toneForMetricStatus(overview.host_metrics.memory.status)}>{overview.host_metrics.memory.status}</StatusBadge>}
+            status={overview.host_metrics.memory.status}
+            usagePercent={overview.host_metrics.memory.usage_percent}
           />
-          <SummaryCard
+          <DonutMetricCard
             label="Root Disk"
-            value={
+            primaryValue={formatPercent(overview.host_metrics.disk.usage_percent)}
+            secondaryText={
               overview.host_metrics.disk.used_bytes === null || overview.host_metrics.disk.total_bytes === null
                 ? "-"
                 : `${formatBytes(overview.host_metrics.disk.used_bytes)} / ${formatBytes(overview.host_metrics.disk.total_bytes)}`
             }
-            hint={
+            footnote={
               overview.host_metrics.disk.status === "unavailable"
                 ? "루트 볼륨 사용량을 읽지 못했습니다."
-                : `${overview.host_metrics.disk.mount_path} · 여유 ${formatBytes(overview.host_metrics.disk.free_bytes)} · 사용률 ${formatPercent(overview.host_metrics.disk.usage_percent)}`
+                : `${overview.host_metrics.disk.mount_path} · 여유 ${formatBytes(overview.host_metrics.disk.free_bytes)}`
             }
-            accent={<StatusBadge tone={toneForMetricStatus(overview.host_metrics.disk.status)}>{overview.host_metrics.disk.status}</StatusBadge>}
+            status={overview.host_metrics.disk.status}
+            usagePercent={overview.host_metrics.disk.usage_percent}
           />
         </div>
       </SectionCard>
