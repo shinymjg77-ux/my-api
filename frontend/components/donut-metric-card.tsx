@@ -13,8 +13,8 @@ interface DonutMetricCardProps {
 }
 
 
-const DONUT_SIZE = 144;
-const DONUT_STROKE = 12;
+const DONUT_SIZE = 124;
+const DONUT_STROKE = 10;
 const DONUT_RADIUS = (DONUT_SIZE - DONUT_STROKE) / 2;
 const DONUT_CIRCUMFERENCE = 2 * Math.PI * DONUT_RADIUS;
 
@@ -60,13 +60,13 @@ export function DonutMetricCard({
   const colors = chartColors(status);
 
   return (
-    <div className="panel-strong flex h-full flex-col gap-5 p-5">
+    <div className="panel-strong flex h-full flex-col gap-4 p-4">
       <div className="flex items-start justify-between gap-3">
         <p className="text-xs font-semibold uppercase tracking-[0.18em] text-muted">{label}</p>
         <StatusBadge tone={toneForMetricStatus(status)}>{status}</StatusBadge>
       </div>
 
-      <div className="flex flex-1 flex-col items-center justify-center gap-4">
+      <div className="flex flex-1 flex-col items-center justify-center gap-3">
         <div className="relative flex items-center justify-center">
           <svg
             aria-hidden="true"
@@ -100,7 +100,7 @@ export function DonutMetricCard({
             <span className="text-[11px] font-semibold uppercase tracking-[0.16em] text-muted">Usage</span>
             <span
               className={cn(
-                "mt-1 font-mono text-3xl font-semibold tracking-tight text-ink",
+                "mt-1 font-mono text-[1.7rem] font-semibold tracking-tight text-ink",
                 status === "unavailable" && "text-muted",
               )}
             >
@@ -109,9 +109,9 @@ export function DonutMetricCard({
           </div>
         </div>
 
-        <div className="space-y-2 text-center">
+        <div className="space-y-1.5 text-center">
           <p className="text-sm font-semibold text-ink">{secondaryText}</p>
-          <p className="text-sm leading-6 text-muted">{footnote}</p>
+          <p className="text-xs leading-5 text-muted">{footnote}</p>
         </div>
       </div>
     </div>
