@@ -64,47 +64,6 @@ export default async function DashboardPage() {
         }
       />
 
-      <SectionCard title="운영 개요" description="첫 화면에서는 지금 위험한지와 추적 범위만 압축해서 보여줍니다.">
-        <div className="grid gap-4 xl:grid-cols-[minmax(0,1.2fr)_minmax(0,2fr)]">
-          <div className="panel-strong flex h-full flex-col justify-between gap-4 p-4">
-            <div className="flex items-start justify-between gap-3">
-              <div className="space-y-1.5">
-                <p className="text-xs font-semibold uppercase tracking-[0.18em] text-muted">Overall Status</p>
-                <p className="font-mono text-[2rem] font-semibold tracking-tight text-ink">
-                  {overview.overall_status.toUpperCase()}
-                </p>
-                <p className="text-sm leading-6 text-muted">systemd 핵심 서비스와 PM2 프로세스를 합친 현재 운영 상태</p>
-              </div>
-              <StatusBadge tone={toneForOverall(overview.overall_status)}>{overview.overall_status}</StatusBadge>
-            </div>
-
-            <div className="flex flex-wrap gap-2">
-              {quickMeta.map((item) => (
-                <div
-                  key={item.label}
-                  className="rounded-full border border-line bg-panel px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-muted"
-                >
-                  {item.label} {item.value}
-                </div>
-              ))}
-            </div>
-          </div>
-
-          <div className="grid gap-4 md:grid-cols-3">
-            {quickStats.map((item) => (
-              <div key={item.label} className="panel-strong flex h-full flex-col gap-3 p-4">
-                <div className="flex items-start justify-between gap-3">
-                  <p className="text-xs font-semibold uppercase tracking-[0.18em] text-muted">{item.label}</p>
-                  <StatusBadge tone={item.tone}>{item.badge}</StatusBadge>
-                </div>
-                <p className="font-mono text-2xl font-semibold tracking-tight text-ink">{item.value}</p>
-                <p className="text-sm text-muted">{item.hint}</p>
-              </div>
-            ))}
-          </div>
-        </div>
-      </SectionCard>
-
       <SectionCard title="서버 리소스" description="호스트 전체 CPU, 메모리, 루트 볼륨 사용량을 20초 단위로 새로 읽어옵니다.">
         <div className="grid gap-4 lg:grid-cols-3">
           <DonutMetricCard
@@ -151,6 +110,47 @@ export default async function DashboardPage() {
             status={overview.host_metrics.disk.status}
             usagePercent={overview.host_metrics.disk.usage_percent}
           />
+        </div>
+      </SectionCard>
+
+      <SectionCard title="운영 개요" description="첫 화면에서는 지금 위험한지와 추적 범위만 압축해서 보여줍니다.">
+        <div className="grid gap-4 xl:grid-cols-[minmax(0,1.2fr)_minmax(0,2fr)]">
+          <div className="panel-strong flex h-full flex-col justify-between gap-4 p-4">
+            <div className="flex items-start justify-between gap-3">
+              <div className="space-y-1.5">
+                <p className="text-xs font-semibold uppercase tracking-[0.18em] text-muted">Overall Status</p>
+                <p className="font-mono text-[2rem] font-semibold tracking-tight text-ink">
+                  {overview.overall_status.toUpperCase()}
+                </p>
+                <p className="text-sm leading-6 text-muted">systemd 핵심 서비스와 PM2 프로세스를 합친 현재 운영 상태</p>
+              </div>
+              <StatusBadge tone={toneForOverall(overview.overall_status)}>{overview.overall_status}</StatusBadge>
+            </div>
+
+            <div className="flex flex-wrap gap-2">
+              {quickMeta.map((item) => (
+                <div
+                  key={item.label}
+                  className="rounded-full border border-line bg-panel px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-muted"
+                >
+                  {item.label} {item.value}
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <div className="grid gap-4 md:grid-cols-3">
+            {quickStats.map((item) => (
+              <div key={item.label} className="panel-strong flex h-full flex-col gap-3 p-4">
+                <div className="flex items-start justify-between gap-3">
+                  <p className="text-xs font-semibold uppercase tracking-[0.18em] text-muted">{item.label}</p>
+                  <StatusBadge tone={item.tone}>{item.badge}</StatusBadge>
+                </div>
+                <p className="font-mono text-2xl font-semibold tracking-tight text-ink">{item.value}</p>
+                <p className="text-sm text-muted">{item.hint}</p>
+              </div>
+            ))}
+          </div>
         </div>
       </SectionCard>
 
