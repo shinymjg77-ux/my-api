@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-TARGET_HOST="${1:-oci-ubuntu}"
+TARGET_HOST="${1:?usage: ./scripts/deploy_release.sh <ssh-host-alias-or-hostname>}"
 APP_ROOT="${APP_ROOT:-/srv/my-api}"
 RELEASE_ID="${RELEASE_ID:-$(date -u +%Y%m%dT%H%M%SZ)}"
 RELEASE_DIR="$APP_ROOT/releases/$RELEASE_ID"

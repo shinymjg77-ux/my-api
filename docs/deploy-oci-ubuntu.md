@@ -1,6 +1,6 @@
 # OCI Ubuntu 배포 절차
 
-이 문서는 이 프로젝트를 `OCI Ubuntu` 서버에 배포하는 실제 절차를 정리한 문서다. 기준 도메인은 `ansan-jarvis.duckdns.org` 이고, 구성은 아래와 같다.
+이 문서는 이 프로젝트를 `OCI Ubuntu` 서버에 배포하는 실제 절차를 정리한 문서다. 예시 도메인은 `admin.example.com` 이고, 구성은 아래와 같다.
 
 - `Nginx`: 외부 진입점, HTTPS 종료, 리버스 프록시
 - `FastAPI`: `127.0.0.1:8000`
@@ -12,7 +12,7 @@
 ## 1. 선행 조건
 
 - OCI 인스턴스에 Ubuntu 설치 완료
-- `ansan-jarvis.duckdns.org` 가 OCI 공인 IP를 가리키도록 DuckDNS 설정 완료
+- `admin.example.com` 이 서버 공인 IP를 가리키도록 DNS 설정 완료
 - OCI Security List 또는 Network Security Group 에서 아래 포트 허용
 - `22/tcp`
 - `80/tcp`
@@ -56,7 +56,7 @@ git clone <YOUR_GIT_REPOSITORY_URL> .
 
 ## 3. 백엔드 환경변수 설정
 
-예시 파일은 저장소의 [backend.env.example](/Users/junlab/workspace/projects/my-api/deploy/env/backend.env.example) 를 기준으로 한다.
+예시 파일은 저장소의 [deploy/env/backend.env.example](../deploy/env/backend.env.example) 를 기준으로 한다.
 
 서버에는 `systemd` 가 읽는 실제 환경파일을 `/etc/my-api/backend.env` 로 둔다.
 
@@ -83,7 +83,7 @@ COOKIE_SECURE=true
 COOKIE_SAMESITE=lax
 
 DATABASE_URL=sqlite:////srv/my-api/data/app.db
-CORS_ORIGINS=["https://ansan-jarvis.duckdns.org"]
+CORS_ORIGINS=["https://admin.example.com"]
 
 BOOTSTRAP_ADMIN_USERNAME=admin
 BOOTSTRAP_ADMIN_PASSWORD=change-this-now
@@ -113,7 +113,7 @@ PY
 
 ## 4. 프론트엔드 환경변수 설정
 
-예시 파일은 저장소의 [frontend.env.example](/Users/junlab/workspace/projects/my-api/deploy/env/frontend.env.example) 를 기준으로 한다.
+예시 파일은 저장소의 [deploy/env/frontend.env.example](../deploy/env/frontend.env.example) 를 기준으로 한다.
 
 ```bash
 sudo cp /srv/my-api/deploy/env/frontend.env.example /etc/my-api/frontend.env
@@ -195,8 +195,8 @@ curl -I http://127.0.0.1:3000/login
 
 예시 유닛 파일은 저장소의 아래 파일을 사용한다.
 
-- [personal-api-admin-backend.service](/Users/junlab/workspace/projects/my-api/deploy/systemd/personal-api-admin-backend.service)
-- [personal-api-admin-frontend.service](/Users/junlab/workspace/projects/my-api/deploy/systemd/personal-api-admin-frontend.service)
+- [deploy/systemd/personal-api-admin-backend.service](../deploy/systemd/personal-api-admin-backend.service)
+- [deploy/systemd/personal-api-admin-frontend.service](../deploy/systemd/personal-api-admin-frontend.service)
 
 서버에 복사:
 
@@ -226,14 +226,14 @@ sudo journalctl -u personal-api-admin-frontend -n 100 --no-pager
 
 ## 8. Nginx 설정
 
-예시 설정 파일은 [ansan-jarvis.duckdns.org.conf](/Users/junlab/workspace/projects/my-api/deploy/nginx/ansan-jarvis.duckdns.org.conf) 이다.
+예시 설정 파일은 [deploy/nginx/site.conf.example](../deploy/nginx/site.conf.example) 이다.
 
 서버에 복사:
 
 ```bash
 sudo mkdir -p /var/www/certbot
-sudo cp /srv/my-api/deploy/nginx/ansan-jarvis.duckdns.org.conf /etc/nginx/sites-available/ansan-jarvis.duckdns.org
-sudo ln -sf /etc/nginx/sites-available/ansan-jarvis.duckdns.org /etc/nginx/sites-enabled/ansan-jarvis.duckdns.org
+sudo cp /srv/my-api/deploy/nginx/site.conf.example /etc/nginx/sites-available/admin.example.com
+sudo ln -sf /etc/nginx/sites-available/admin.example.com /etc/nginx/sites-enabled/admin.example.com
 sudo nginx -t
 sudo systemctl reload nginx
 ```
@@ -247,7 +247,7 @@ sudo systemctl reload nginx
 가장 간단한 방법은 `certbot --nginx` 를 사용하는 것이다.
 
 ```bash
-sudo certbot --nginx -d ansan-jarvis.duckdns.org
+sudo certbot --nginx -d admin.example.com
 ```
 
 인증서 자동 갱신 테스트:
@@ -273,13 +273,13 @@ sudo ufw status
 아래 순서로 점검한다.
 
 ```bash
-curl -I https://ansan-jarvis.duckdns.org/login
-curl https://ansan-jarvis.duckdns.org/healthz
+curl -I https://admin.example.com/login
+curl https://admin.example.com/healthz
 ```
 
 브라우저 확인 항목:
 
-- `https://ansan-jarvis.duckdns.org/login` 접속
+- `https://admin.example.com/login` 접속
 - 관리자 로그인 성공
 - `/dashboard` 진입 성공
 - API 등록/수정 가능
@@ -311,7 +311,7 @@ sudo systemctl reload nginx
 
 ## 12. 실패 가능 지점
 
-- DuckDNS 가 OCI 공인 IP를 가리키지 않으면 `certbot` 발급이 실패한다.
+- DNS 가 서버 공인 IP를 가리키지 않으면 `certbot` 발급이 실패한다.
 - OCI 보안 규칙에서 `80`, `443` 을 열지 않으면 외부 접속이 되지 않는다.
 - 이 프론트엔드는 `/api/auth/*`, `/api/proxy/*` 를 Next.js route handler 로 사용하므로, Nginx 에서 `/api/` 를 FastAPI 로 직접 프록시하면 로그인과 프록시 호출이 깨진다.
 - `COOKIE_SECURE=true` 인데 HTTPS 없이 직접 접속하면 로그인 쿠키가 정상 동작하지 않는다.
@@ -323,10 +323,10 @@ sudo systemctl reload nginx
 
 백업 스크립트:
 
-- [backup_sqlite.sh](/Users/junlab/workspace/projects/my-api/scripts/backup_sqlite.sh)
-- [my-api-backup](/Users/junlab/workspace/projects/my-api/deploy/cron/my-api-backup)
-- [upload_backup.sh](/Users/junlab/workspace/projects/my-api/scripts/upload_backup.sh)
-- [ops.env.example](/Users/junlab/workspace/projects/my-api/deploy/env/ops.env.example)
+- [scripts/backup_sqlite.sh](../scripts/backup_sqlite.sh)
+- [deploy/cron/my-api-backup](../deploy/cron/my-api-backup)
+- [scripts/upload_backup.sh](../scripts/upload_backup.sh)
+- [deploy/env/ops.env.example](../deploy/env/ops.env.example)
 
 설치:
 
@@ -357,7 +357,7 @@ ls -lah /srv/my-api/backups/sqlite
 
 로그 회전 설정 파일:
 
-- [my-api](/Users/junlab/workspace/projects/my-api/deploy/logrotate/my-api)
+- [deploy/logrotate/my-api](../deploy/logrotate/my-api)
 
 대상 로그:
 
@@ -381,8 +381,8 @@ sudo logrotate -d /etc/logrotate.d/my-api
 
 알림 스크립트와 서비스:
 
-- [send_alert.sh](/Users/junlab/workspace/projects/my-api/scripts/send_alert.sh)
-- [my-api-alert@.service](/Users/junlab/workspace/projects/my-api/deploy/systemd/my-api-alert@.service)
+- [scripts/send_alert.sh](../scripts/send_alert.sh)
+- [deploy/systemd/my-api-alert@.service](../deploy/systemd/my-api-alert@.service)
 
 지원 형태:
 
@@ -395,7 +395,7 @@ sudo logrotate -d /etc/logrotate.d/my-api
 ```env
 ALERT_WEBHOOK_TYPE=discord
 ALERT_WEBHOOK_URL=https://discord.com/api/webhooks/...
-ALERT_SOURCE=ansan-jarvis.duckdns.org
+ALERT_SOURCE=admin.example.com
 ```
 
 설치:
@@ -412,8 +412,8 @@ sudo systemctl daemon-reload
 
 스크립트:
 
-- [deploy_release.sh](/Users/junlab/workspace/projects/my-api/scripts/deploy_release.sh)
-- [remote_activate_release.sh](/Users/junlab/workspace/projects/my-api/scripts/remote_activate_release.sh)
+- [scripts/deploy_release.sh](../scripts/deploy_release.sh)
+- [scripts/remote_activate_release.sh](../scripts/remote_activate_release.sh)
 
 구조:
 
@@ -425,9 +425,9 @@ sudo systemctl daemon-reload
 실행 예시:
 
 ```bash
-cd /Users/junlab/workspace/projects/my-api
+cd /path/to/your/local/my-api
 chmod +x scripts/deploy_release.sh scripts/remote_activate_release.sh
-./scripts/deploy_release.sh oci-ubuntu
+./scripts/deploy_release.sh your-ssh-host-alias
 ```
 
 주의:
