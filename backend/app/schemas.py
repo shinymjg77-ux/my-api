@@ -235,6 +235,34 @@ class OpsProcessStatusResponse(BaseModel):
     cwd: str | None
 
 
+class HostCpuMetricsResponse(BaseModel):
+    usage_percent: float | None
+    status: Literal["healthy", "warning", "critical", "unavailable"]
+
+
+class HostMemoryMetricsResponse(BaseModel):
+    total_bytes: int | None
+    used_bytes: int | None
+    available_bytes: int | None
+    usage_percent: float | None
+    status: Literal["healthy", "warning", "critical", "unavailable"]
+
+
+class HostDiskMetricsResponse(BaseModel):
+    mount_path: str
+    total_bytes: int | None
+    used_bytes: int | None
+    free_bytes: int | None
+    usage_percent: float | None
+    status: Literal["healthy", "warning", "critical", "unavailable"]
+
+
+class HostMetricsResponse(BaseModel):
+    cpu: HostCpuMetricsResponse
+    memory: HostMemoryMetricsResponse
+    disk: HostDiskMetricsResponse
+
+
 class OpsDashboardSummaryResponse(BaseModel):
     systemd_total: int
     systemd_healthy: int
@@ -246,6 +274,7 @@ class OpsDashboardSummaryResponse(BaseModel):
 class OpsDashboardResponse(BaseModel):
     generated_at: datetime
     overall_status: Literal["healthy", "warning", "critical"]
+    host_metrics: HostMetricsResponse
     systemd_services: list[OpsServiceStatusResponse]
     pm2_processes: list[OpsProcessStatusResponse]
     summary: OpsDashboardSummaryResponse

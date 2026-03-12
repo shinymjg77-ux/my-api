@@ -110,6 +110,7 @@ export interface DashboardSummary {
 
 export type OpsOverallStatus = "healthy" | "warning" | "critical";
 export type OpsProcessAttentionLevel = "healthy" | "warning" | "critical";
+export type HostMetricStatus = "healthy" | "warning" | "critical" | "unavailable";
 
 
 export interface OpsServiceStatus {
@@ -146,9 +147,42 @@ export interface OpsDashboardSummary {
 }
 
 
+export interface HostCpuMetrics {
+  usage_percent: number | null;
+  status: HostMetricStatus;
+}
+
+
+export interface HostMemoryMetrics {
+  total_bytes: number | null;
+  used_bytes: number | null;
+  available_bytes: number | null;
+  usage_percent: number | null;
+  status: HostMetricStatus;
+}
+
+
+export interface HostDiskMetrics {
+  mount_path: string;
+  total_bytes: number | null;
+  used_bytes: number | null;
+  free_bytes: number | null;
+  usage_percent: number | null;
+  status: HostMetricStatus;
+}
+
+
+export interface HostMetrics {
+  cpu: HostCpuMetrics;
+  memory: HostMemoryMetrics;
+  disk: HostDiskMetrics;
+}
+
+
 export interface OpsDashboard {
   generated_at: string;
   overall_status: OpsOverallStatus;
+  host_metrics: HostMetrics;
   systemd_services: OpsServiceStatus[];
   pm2_processes: OpsProcessStatus[];
   summary: OpsDashboardSummary;

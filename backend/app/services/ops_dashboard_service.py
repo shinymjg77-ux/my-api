@@ -2,6 +2,7 @@ import json
 import os
 import shutil
 import subprocess
+import time
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -17,6 +18,8 @@ PM2_ATTENTION_ORDER = {
     "warning": 1,
     "healthy": 2,
 }
+HOST_USAGE_WARNING_THRESHOLD = 75.0
+HOST_USAGE_CRITICAL_THRESHOLD = 90.0
 
 
 @dataclass
@@ -51,6 +54,169 @@ def _run_command(command: list[str], *, env: dict[str, str] | None = None, timeo
         stdout=completed.stdout.strip(),
         stderr=completed.stderr.strip(),
         returncode=completed.returncode,
+    )
+
+
+def _host_metric_status_for_percent(
+    usage_percent: float | None,
+) -> Literal["healthy", "warning", "critical", "unavailable"]:
+    if usage_percent is None:
+        return "unavailable"
+    if usage_percent >= HOST_USAGE_CRITICAL_THRESHOLD:
+        return "critical"
+    if usage_percent >= HOST_USAGE_WARNING_THRESHOLD:
+        return "warning"
+    return "healthy"
+
+
+def _usage_percent(used: int, total: int) -> float:
+    if total <= 0:
+        raise ValueError("total must be positive")
+    return round((used / total) * 100, 1)
+
+
+def _read_cpu_snapshot(proc_stat_path: str = "/proc/stat") -> tuple[int, int]:
+    with open(proc_stat_path, encoding="utf-8") as proc_stat_file:
+        first_line = proc_stat_file.readline().strip()
+
+    parts = first_line.split()
+    if len(parts) < 5 or parts[0] != "cpu":
+        raise ValueError("invalid /proc/stat payload")
+
+    values = [int(part) for part in parts[1:]]
+    idle = values[3]
+    iowait = values[4] if len(values) > 4 else 0
+    idle_all = idle + iowait
+    total = sum(values)
+    return idle_all, total
+
+
+def _calculate_cpu_usage_percent(first: tuple[int, int], second: tuple[int, int]) -> float:
+    idle_delta = second[0] - first[0]
+    total_delta = second[1] - first[1]
+    if total_delta <= 0:
+        raise ValueError("cpu total delta must be positive")
+
+    busy_delta = max(total_delta - idle_delta, 0)
+    return round((busy_delta / total_delta) * 100, 1)
+
+
+def _collect_host_cpu_metrics(
+    *,
+    proc_stat_path: str = "/proc/stat",
+    sample_interval: float = 0.2,
+) -> tuple[schemas.HostCpuMetricsResponse, list[str]]:
+    try:
+        first = _read_cpu_snapshot(proc_stat_path)
+        time.sleep(sample_interval)
+        second = _read_cpu_snapshot(proc_stat_path)
+        usage_percent = _calculate_cpu_usage_percent(first, second)
+        return (
+            schemas.HostCpuMetricsResponse(
+                usage_percent=usage_percent,
+                status=_host_metric_status_for_percent(usage_percent),
+            ),
+            [],
+        )
+    except (OSError, ValueError) as exc:
+        return (
+            schemas.HostCpuMetricsResponse(usage_percent=None, status="unavailable"),
+            [f"host cpu metrics unavailable: {exc}"],
+        )
+
+
+def _parse_meminfo(content: str) -> tuple[int, int]:
+    values: dict[str, int] = {}
+    for line in content.splitlines():
+        if ":" not in line:
+            continue
+        key, remainder = line.split(":", 1)
+        number = remainder.strip().split()[0]
+        if number.isdigit():
+            values[key] = int(number)
+
+    total_kib = values.get("MemTotal")
+    available_kib = values.get("MemAvailable")
+    if total_kib is None or available_kib is None:
+        raise ValueError("meminfo missing MemTotal or MemAvailable")
+    return total_kib * 1024, available_kib * 1024
+
+
+def _collect_host_memory_metrics(
+    *,
+    meminfo_path: str = "/proc/meminfo",
+) -> tuple[schemas.HostMemoryMetricsResponse, list[str]]:
+    try:
+        with open(meminfo_path, encoding="utf-8") as meminfo_file:
+            total_bytes, available_bytes = _parse_meminfo(meminfo_file.read())
+        used_bytes = max(total_bytes - available_bytes, 0)
+        usage_percent = _usage_percent(used_bytes, total_bytes)
+        return (
+            schemas.HostMemoryMetricsResponse(
+                total_bytes=total_bytes,
+                used_bytes=used_bytes,
+                available_bytes=available_bytes,
+                usage_percent=usage_percent,
+                status=_host_metric_status_for_percent(usage_percent),
+            ),
+            [],
+        )
+    except (OSError, ValueError) as exc:
+        return (
+            schemas.HostMemoryMetricsResponse(
+                total_bytes=None,
+                used_bytes=None,
+                available_bytes=None,
+                usage_percent=None,
+                status="unavailable",
+            ),
+            [f"host memory metrics unavailable: {exc}"],
+        )
+
+
+def _collect_host_disk_metrics(
+    *,
+    mount_path: str = "/",
+) -> tuple[schemas.HostDiskMetricsResponse, list[str]]:
+    try:
+        usage = shutil.disk_usage(mount_path)
+        usage_percent = _usage_percent(usage.used, usage.total)
+        return (
+            schemas.HostDiskMetricsResponse(
+                mount_path=mount_path,
+                total_bytes=usage.total,
+                used_bytes=usage.used,
+                free_bytes=usage.free,
+                usage_percent=usage_percent,
+                status=_host_metric_status_for_percent(usage_percent),
+            ),
+            [],
+        )
+    except (OSError, ValueError) as exc:
+        return (
+            schemas.HostDiskMetricsResponse(
+                mount_path=mount_path,
+                total_bytes=None,
+                used_bytes=None,
+                free_bytes=None,
+                usage_percent=None,
+                status="unavailable",
+            ),
+            [f"host disk metrics unavailable: {exc}"],
+        )
+
+
+def _collect_host_metrics() -> tuple[schemas.HostMetricsResponse, list[str]]:
+    cpu, cpu_warnings = _collect_host_cpu_metrics()
+    memory, memory_warnings = _collect_host_memory_metrics()
+    disk, disk_warnings = _collect_host_disk_metrics()
+    return (
+        schemas.HostMetricsResponse(
+            cpu=cpu,
+            memory=memory,
+            disk=disk,
+        ),
+        [*cpu_warnings, *memory_warnings, *disk_warnings],
     )
 
 
@@ -228,9 +394,10 @@ def _collect_pm2_processes() -> tuple[list[schemas.OpsProcessStatusResponse], li
 
 def get_ops_dashboard_overview() -> schemas.OpsDashboardResponse:
     generated_at = datetime.now(timezone.utc)
+    host_metrics, host_warnings = _collect_host_metrics()
     systemd_services, systemd_warnings = _collect_systemd_services()
     pm2_processes, pm2_warnings = _collect_pm2_processes()
-    warnings = [*systemd_warnings, *pm2_warnings]
+    warnings = [*host_warnings, *systemd_warnings, *pm2_warnings]
 
     systemd_healthy = sum(1 for item in systemd_services if item.is_healthy)
     pm2_online = sum(1 for item in pm2_processes if item.is_healthy)
@@ -246,6 +413,7 @@ def get_ops_dashboard_overview() -> schemas.OpsDashboardResponse:
     return schemas.OpsDashboardResponse(
         generated_at=generated_at,
         overall_status=overall_status,
+        host_metrics=host_metrics,
         systemd_services=systemd_services,
         pm2_processes=pm2_processes,
         summary=schemas.OpsDashboardSummaryResponse(

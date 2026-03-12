@@ -1,4 +1,5 @@
 import unittest
+from unittest.mock import patch
 
 from backend.app import schemas
 from backend.app.services import ops_dashboard_service
@@ -27,6 +28,82 @@ def make_process(
 
 
 class OpsDashboardServiceTests(unittest.TestCase):
+    def test_host_metric_status_uses_thresholds(self) -> None:
+        self.assertEqual(ops_dashboard_service._host_metric_status_for_percent(None), "unavailable")
+        self.assertEqual(ops_dashboard_service._host_metric_status_for_percent(42.0), "healthy")
+        self.assertEqual(ops_dashboard_service._host_metric_status_for_percent(75.0), "warning")
+        self.assertEqual(ops_dashboard_service._host_metric_status_for_percent(90.0), "critical")
+
+    def test_calculate_cpu_usage_percent_uses_snapshot_delta(self) -> None:
+        usage_percent = ops_dashboard_service._calculate_cpu_usage_percent((100, 1000), (160, 1200))
+        self.assertEqual(usage_percent, 70.0)
+
+    def test_parse_meminfo_uses_memavailable(self) -> None:
+        total_bytes, available_bytes = ops_dashboard_service._parse_meminfo(
+            "MemTotal:       1024000 kB\nMemAvailable:    256000 kB\n"
+        )
+
+        self.assertEqual(total_bytes, 1024000 * 1024)
+        self.assertEqual(available_bytes, 256000 * 1024)
+
+    @patch("backend.app.services.ops_dashboard_service.time.sleep", return_value=None)
+    @patch(
+        "backend.app.services.ops_dashboard_service._read_cpu_snapshot",
+        side_effect=[(100, 1000), (160, 1200)],
+    )
+    def test_collect_host_cpu_metrics_returns_usage(self, _read_cpu_snapshot: object, _sleep: object) -> None:
+        metrics, warnings = ops_dashboard_service._collect_host_cpu_metrics()
+
+        self.assertEqual(metrics.usage_percent, 70.0)
+        self.assertEqual(metrics.status, "healthy")
+        self.assertEqual(warnings, [])
+
+    @patch("backend.app.services.ops_dashboard_service._collect_host_disk_metrics")
+    @patch("backend.app.services.ops_dashboard_service._collect_host_memory_metrics")
+    @patch("backend.app.services.ops_dashboard_service._collect_host_cpu_metrics")
+    @patch("backend.app.services.ops_dashboard_service._collect_pm2_processes")
+    @patch("backend.app.services.ops_dashboard_service._collect_systemd_services")
+    def test_overview_includes_host_metric_warnings_without_failing(
+        self,
+        systemd_mock: object,
+        pm2_mock: object,
+        cpu_mock: object,
+        memory_mock: object,
+        disk_mock: object,
+    ) -> None:
+        systemd_mock.return_value = ([], [])
+        pm2_mock.return_value = ([], [])
+        cpu_mock.return_value = (
+            schemas.HostCpuMetricsResponse(usage_percent=None, status="unavailable"),
+            ["host cpu metrics unavailable: test"],
+        )
+        memory_mock.return_value = (
+            schemas.HostMemoryMetricsResponse(
+                total_bytes=100,
+                used_bytes=40,
+                available_bytes=60,
+                usage_percent=40.0,
+                status="healthy",
+            ),
+            [],
+        )
+        disk_mock.return_value = (
+            schemas.HostDiskMetricsResponse(
+                mount_path="/",
+                total_bytes=100,
+                used_bytes=10,
+                free_bytes=90,
+                usage_percent=10.0,
+                status="healthy",
+            ),
+            [],
+        )
+
+        overview = ops_dashboard_service.get_ops_dashboard_overview()
+
+        self.assertEqual(overview.host_metrics.cpu.status, "unavailable")
+        self.assertIn("host cpu metrics unavailable: test", overview.warnings)
+
     def test_common_prefix_groups_processes_by_first_remaining_token(self) -> None:
         processes = [
             make_process("btcore-monitor"),

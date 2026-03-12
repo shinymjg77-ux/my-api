@@ -8,7 +8,7 @@ import { StatusBadge } from "@/components/status-badge";
 import { SummaryCard } from "@/components/summary-card";
 import { formatBytes, formatCount, formatDateTime, formatDuration, formatPercent, formatStatusCode } from "@/lib/format";
 import { getDashboardSummary, getOpsDashboard } from "@/lib/server-api";
-import type { OpsProcessAttentionLevel, OpsProcessStatus } from "@/lib/types";
+import type { HostMetricStatus, OpsProcessAttentionLevel, OpsProcessStatus } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
 
@@ -29,6 +29,20 @@ function toneForAttention(level: OpsProcessAttentionLevel) {
   }
   if (level === "warning") {
     return "warning";
+  }
+  return "success";
+}
+
+
+function toneForMetricStatus(status: HostMetricStatus) {
+  if (status === "critical") {
+    return "danger";
+  }
+  if (status === "warning") {
+    return "warning";
+  }
+  if (status === "unavailable") {
+    return "muted";
   }
   return "success";
 }
@@ -121,6 +135,49 @@ export default async function DashboardPage() {
           accent={<StatusBadge tone={overview.summary.pm2_unhealthy > 0 ? "danger" : "muted"}>watch</StatusBadge>}
         />
       </section>
+
+      <SectionCard title="서버 리소스" description="호스트 전체 CPU, 메모리, 루트 볼륨 사용량을 20초 단위로 새로 읽어옵니다.">
+        <div className="grid gap-4 lg:grid-cols-3">
+          <SummaryCard
+            label="Host CPU"
+            value={formatPercent(overview.host_metrics.cpu.usage_percent)}
+            hint={
+              overview.host_metrics.cpu.status === "unavailable"
+                ? "현재 CPU 사용률을 읽지 못했습니다."
+                : "서버 전체 CPU 사용률"
+            }
+            accent={<StatusBadge tone={toneForMetricStatus(overview.host_metrics.cpu.status)}>{overview.host_metrics.cpu.status}</StatusBadge>}
+          />
+          <SummaryCard
+            label="Host Memory"
+            value={
+              overview.host_metrics.memory.used_bytes === null || overview.host_metrics.memory.total_bytes === null
+                ? "-"
+                : `${formatBytes(overview.host_metrics.memory.used_bytes)} / ${formatBytes(overview.host_metrics.memory.total_bytes)}`
+            }
+            hint={
+              overview.host_metrics.memory.status === "unavailable"
+                ? "현재 메모리 사용량을 읽지 못했습니다."
+                : `가용 ${formatBytes(overview.host_metrics.memory.available_bytes)} · 사용률 ${formatPercent(overview.host_metrics.memory.usage_percent)}`
+            }
+            accent={<StatusBadge tone={toneForMetricStatus(overview.host_metrics.memory.status)}>{overview.host_metrics.memory.status}</StatusBadge>}
+          />
+          <SummaryCard
+            label="Root Disk"
+            value={
+              overview.host_metrics.disk.used_bytes === null || overview.host_metrics.disk.total_bytes === null
+                ? "-"
+                : `${formatBytes(overview.host_metrics.disk.used_bytes)} / ${formatBytes(overview.host_metrics.disk.total_bytes)}`
+            }
+            hint={
+              overview.host_metrics.disk.status === "unavailable"
+                ? "루트 볼륨 사용량을 읽지 못했습니다."
+                : `${overview.host_metrics.disk.mount_path} · 여유 ${formatBytes(overview.host_metrics.disk.free_bytes)} · 사용률 ${formatPercent(overview.host_metrics.disk.usage_percent)}`
+            }
+            accent={<StatusBadge tone={toneForMetricStatus(overview.host_metrics.disk.status)}>{overview.host_metrics.disk.status}</StatusBadge>}
+          />
+        </div>
+      </SectionCard>
 
       <div className="grid gap-6 xl:grid-cols-[0.95fr_1.05fr]">
         <SectionCard
