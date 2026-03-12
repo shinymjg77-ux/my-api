@@ -5,12 +5,18 @@ import subprocess
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import Literal
 
 from ..config import settings
 from .. import schemas
 
 
 SYSTEMCTL_PROPERTIES = ("Id", "Description", "ActiveState", "SubState")
+PM2_ATTENTION_ORDER = {
+    "critical": 0,
+    "warning": 1,
+    "healthy": 2,
+}
 
 
 @dataclass
@@ -96,6 +102,76 @@ def _collect_systemd_services() -> tuple[list[schemas.OpsServiceStatusResponse],
     return services, warnings
 
 
+def _attention_level_for_pm2_process(status: str, restart_count: int) -> Literal["healthy", "warning", "critical"]:
+    normalized_status = status.lower()
+    if normalized_status != "online":
+        return "critical"
+    if restart_count >= 1:
+        return "warning"
+    return "healthy"
+
+
+def _common_pm2_name_prefix(names: list[str]) -> str | None:
+    tokenized_names = [[part for part in name.split("-") if part] for name in names if name]
+    if len(tokenized_names) < 2:
+        return None
+
+    first_token = tokenized_names[0][0] if tokenized_names[0] else ""
+    if not first_token:
+        return None
+    if not all(parts and parts[0] == first_token for parts in tokenized_names[1:]):
+        return None
+    return first_token
+
+
+def _pm2_group_key_for_name(name: str, common_prefix: str | None) -> str:
+    if not common_prefix:
+        return "other"
+
+    prefix_with_dash = f"{common_prefix}-"
+    if name.startswith(prefix_with_dash):
+        remainder = name[len(prefix_with_dash):]
+    elif name == common_prefix:
+        remainder = ""
+    else:
+        return "other"
+
+    token = next((part.strip().lower() for part in remainder.split("-") if part.strip()), "")
+    return token or "other"
+
+
+def _pm2_group_label(group_key: str) -> str:
+    if group_key == "other":
+        return "Other"
+    return " ".join(part.capitalize() for part in group_key.replace("_", "-").split("-") if part)
+
+
+def _decorate_pm2_processes(
+    processes: list[schemas.OpsProcessStatusResponse],
+) -> list[schemas.OpsProcessStatusResponse]:
+    common_prefix = _common_pm2_name_prefix([process.name for process in processes])
+    decorated: list[schemas.OpsProcessStatusResponse] = []
+    for process in processes:
+        group_key = _pm2_group_key_for_name(process.name, common_prefix)
+        decorated.append(
+            process.model_copy(
+                update={
+                    "attention_level": _attention_level_for_pm2_process(process.status, process.restart_count),
+                    "group_key": group_key,
+                    "group_label": _pm2_group_label(group_key),
+                }
+            )
+        )
+    return sorted(
+        decorated,
+        key=lambda item: (
+            PM2_ATTENTION_ORDER[item.attention_level],
+            -item.restart_count,
+            item.name.lower(),
+        ),
+    )
+
+
 def _parse_pm2_process(item: dict) -> schemas.OpsProcessStatusResponse:
     pm2_env = item.get("pm2_env") or {}
     monit = item.get("monit") or {}
@@ -105,15 +181,19 @@ def _parse_pm2_process(item: dict) -> schemas.OpsProcessStatusResponse:
     if isinstance(uptime_ms, (int, float)):
         uptime_seconds = max(0, int((datetime.now(timezone.utc).timestamp() * 1000 - uptime_ms) / 1000))
 
-    status = str(pm2_env.get("status") or "unknown")
+    status = str(pm2_env.get("status") or "unknown").lower()
     pid = item.get("pid")
+    restart_count = int(pm2_env.get("restart_time") or 0)
 
     return schemas.OpsProcessStatusResponse(
         name=str(item.get("name") or "unknown"),
         status=status,
         is_healthy=status == "online",
+        attention_level=_attention_level_for_pm2_process(status, restart_count),
+        group_key="other",
+        group_label="Other",
         pid=pid if isinstance(pid, int) and pid > 0 else None,
-        restart_count=int(pm2_env.get("restart_time") or 0),
+        restart_count=restart_count,
         cpu_percent=float(monit.get("cpu") or 0),
         memory_bytes=int(monit.get("memory") or 0),
         uptime_seconds=uptime_seconds,
@@ -142,7 +222,8 @@ def _collect_pm2_processes() -> tuple[list[schemas.OpsProcessStatusResponse], li
     if not isinstance(payload, list):
         return [], ["pm2 returned unexpected payload"]
 
-    return [_parse_pm2_process(item) for item in payload if isinstance(item, dict)], warnings
+    parsed_processes = [_parse_pm2_process(item) for item in payload if isinstance(item, dict)]
+    return _decorate_pm2_processes(parsed_processes), warnings
 
 
 def get_ops_dashboard_overview() -> schemas.OpsDashboardResponse:

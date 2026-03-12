@@ -224,6 +224,9 @@ class OpsProcessStatusResponse(BaseModel):
     name: str
     status: str
     is_healthy: bool
+    attention_level: Literal["healthy", "warning", "critical"]
+    group_key: str
+    group_label: str
     pid: int | None
     restart_count: int
     cpu_percent: float

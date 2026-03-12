@@ -109,6 +109,7 @@ export interface DashboardSummary {
 
 
 export type OpsOverallStatus = "healthy" | "warning" | "critical";
+export type OpsProcessAttentionLevel = "healthy" | "warning" | "critical";
 
 
 export interface OpsServiceStatus {
@@ -124,6 +125,9 @@ export interface OpsProcessStatus {
   name: string;
   status: string;
   is_healthy: boolean;
+  attention_level: OpsProcessAttentionLevel;
+  group_key: string;
+  group_label: string;
   pid: number | null;
   restart_count: number;
   cpu_percent: number;
