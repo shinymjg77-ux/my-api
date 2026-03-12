@@ -106,3 +106,47 @@ export interface DashboardSummary {
   db_connection_count: number;
   recent_error_logs: ActivityLog[];
 }
+
+
+export type OpsOverallStatus = "healthy" | "warning" | "critical";
+
+
+export interface OpsServiceStatus {
+  name: string;
+  description: string;
+  active_state: string;
+  sub_state: string;
+  is_healthy: boolean;
+}
+
+
+export interface OpsProcessStatus {
+  name: string;
+  status: string;
+  is_healthy: boolean;
+  pid: number | null;
+  restart_count: number;
+  cpu_percent: number;
+  memory_bytes: number;
+  uptime_seconds: number | null;
+  cwd: string | null;
+}
+
+
+export interface OpsDashboardSummary {
+  systemd_total: number;
+  systemd_healthy: number;
+  pm2_total: number;
+  pm2_online: number;
+  pm2_unhealthy: number;
+}
+
+
+export interface OpsDashboard {
+  generated_at: string;
+  overall_status: OpsOverallStatus;
+  systemd_services: OpsServiceStatus[];
+  pm2_processes: OpsProcessStatus[];
+  summary: OpsDashboardSummary;
+  warnings: string[];
+}

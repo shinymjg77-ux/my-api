@@ -37,6 +37,11 @@ class Settings(BaseSettings):
     dashboard_window_days: int = 7
     log_page_size_default: int = 20
     log_page_size_max: int = 100
+    ops_systemd_units: str = (
+        "personal-api-admin-backend.service,"
+        "personal-api-admin-frontend.service,"
+        "nginx.service"
+    )
 
     @field_validator("cors_origins", mode="before")
     @classmethod
@@ -44,6 +49,10 @@ class Settings(BaseSettings):
         if isinstance(value, list):
             return value
         return [item.strip() for item in value.split(",") if item.strip()]
+
+    @property
+    def ops_systemd_units_list(self) -> list[str]:
+        return [item.strip() for item in self.ops_systemd_units.split(",") if item.strip()]
 
 
 settings = Settings()

@@ -210,3 +210,40 @@ class DashboardSummaryResponse(BaseModel):
     api_count: int
     db_connection_count: int
     recent_error_logs: list[ActivityLogResponse]
+
+
+class OpsServiceStatusResponse(BaseModel):
+    name: str
+    description: str
+    active_state: str
+    sub_state: str
+    is_healthy: bool
+
+
+class OpsProcessStatusResponse(BaseModel):
+    name: str
+    status: str
+    is_healthy: bool
+    pid: int | None
+    restart_count: int
+    cpu_percent: float
+    memory_bytes: int
+    uptime_seconds: int | None
+    cwd: str | None
+
+
+class OpsDashboardSummaryResponse(BaseModel):
+    systemd_total: int
+    systemd_healthy: int
+    pm2_total: int
+    pm2_online: int
+    pm2_unhealthy: int
+
+
+class OpsDashboardResponse(BaseModel):
+    generated_at: datetime
+    overall_status: Literal["healthy", "warning", "critical"]
+    systemd_services: list[OpsServiceStatusResponse]
+    pm2_processes: list[OpsProcessStatusResponse]
+    summary: OpsDashboardSummaryResponse
+    warnings: list[str]

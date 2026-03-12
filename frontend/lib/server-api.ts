@@ -1,7 +1,7 @@
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 
-import type { ActivityLogListResponse, Admin, DashboardSummary, DbConnection, ManagedApi } from "@/lib/types";
+import type { ActivityLogListResponse, Admin, DashboardSummary, DbConnection, ManagedApi, OpsDashboard } from "@/lib/types";
 import { readErrorMessage } from "@/lib/utils";
 
 
@@ -139,6 +139,12 @@ export async function requireAdmin() {
 export async function getDashboardSummary() {
   const response = await serverFetch("/dashboard/summary");
   return readJsonOrRedirect<DashboardSummary>(response);
+}
+
+
+export async function getOpsDashboard() {
+  const response = await serverFetch("/dashboard/overview");
+  return readJsonOrRedirect<OpsDashboard>(response);
 }
 
 
