@@ -20,6 +20,7 @@ PM2_ATTENTION_ORDER = {
 }
 HOST_USAGE_WARNING_THRESHOLD = 75.0
 HOST_USAGE_CRITICAL_THRESHOLD = 90.0
+RUNTIME_LOG_LINE_COUNT = 30
 
 
 @dataclass
@@ -55,6 +56,21 @@ def _run_command(command: list[str], *, env: dict[str, str] | None = None, timeo
         stderr=completed.stderr.strip(),
         returncode=completed.returncode,
     )
+
+
+def _pm2_command_env() -> dict[str, str]:
+    env = os.environ.copy()
+    env.setdefault("PM2_HOME", str(Path.home() / ".pm2"))
+    return env
+
+
+def _sanitize_log_lines(raw_output: str, *, limit: int = RUNTIME_LOG_LINE_COUNT) -> list[str]:
+    lines = [
+        line.rstrip()
+        for line in raw_output.splitlines()
+        if line.strip() and not line.startswith("[TAILING]") and not line.startswith("[PM2]")
+    ]
+    return lines[-limit:]
 
 
 def _host_metric_status_for_percent(
@@ -268,6 +284,65 @@ def _collect_systemd_services() -> tuple[list[schemas.OpsServiceStatusResponse],
     return services, warnings
 
 
+def _collect_systemd_runtime_logs(
+    *,
+    line_count: int = RUNTIME_LOG_LINE_COUNT,
+) -> tuple[list[schemas.RuntimeLogSourceResponse], list[str]]:
+    journalctl_bin = _find_command("journalctl", ("/usr/bin/journalctl",))
+    sources: list[schemas.RuntimeLogSourceResponse] = []
+    warnings: list[str] = []
+
+    if not journalctl_bin:
+        warnings.append("journalctl unavailable")
+        for unit in settings.ops_systemd_units_list:
+            sources.append(
+                schemas.RuntimeLogSourceResponse(
+                    source_name=unit,
+                    source_type="systemd",
+                    status="unavailable",
+                    lines=[],
+                )
+            )
+        return sources, warnings
+
+    for unit in settings.ops_systemd_units_list:
+        result = _run_command(
+            [
+                journalctl_bin,
+                "-u",
+                unit,
+                "-n",
+                str(line_count),
+                "--no-pager",
+                "-o",
+                "short-iso",
+            ],
+            timeout=15,
+        )
+        if result.returncode != 0:
+            warnings.append(f"systemd log tail failed: {unit}")
+            sources.append(
+                schemas.RuntimeLogSourceResponse(
+                    source_name=unit,
+                    source_type="systemd",
+                    status="unavailable",
+                    lines=[],
+                )
+            )
+            continue
+
+        sources.append(
+            schemas.RuntimeLogSourceResponse(
+                source_name=unit,
+                source_type="systemd",
+                status="available",
+                lines=_sanitize_log_lines(result.stdout, limit=line_count),
+            )
+        )
+
+    return sources, warnings
+
+
 def _attention_level_for_pm2_process(status: str, restart_count: int) -> Literal["healthy", "warning", "critical"]:
     normalized_status = status.lower()
     if normalized_status != "online":
@@ -373,10 +448,7 @@ def _collect_pm2_processes() -> tuple[list[schemas.OpsProcessStatusResponse], li
     if not pm2_bin:
         return [], ["pm2 unavailable"]
 
-    env = os.environ.copy()
-    env.setdefault("PM2_HOME", str(Path.home() / ".pm2"))
-
-    result = _run_command([pm2_bin, "jlist"], env=env, timeout=15)
+    result = _run_command([pm2_bin, "jlist"], env=_pm2_command_env(), timeout=15)
     if result.returncode != 0:
         return [], [f"pm2 lookup failed: {result.stderr or 'unknown error'}"]
 
@@ -390,6 +462,69 @@ def _collect_pm2_processes() -> tuple[list[schemas.OpsProcessStatusResponse], li
 
     parsed_processes = [_parse_pm2_process(item) for item in payload if isinstance(item, dict)]
     return _decorate_pm2_processes(parsed_processes), warnings
+
+
+def _collect_pm2_runtime_logs(
+    *,
+    line_count: int = RUNTIME_LOG_LINE_COUNT,
+) -> tuple[list[schemas.RuntimeLogSourceResponse], list[str]]:
+    processes, warnings = _collect_pm2_processes()
+    if not processes:
+        return [], warnings
+
+    pm2_bin = _find_command("pm2", ("/usr/local/bin/pm2", "/usr/bin/pm2"))
+    if not pm2_bin:
+        return [], [*warnings, "pm2 unavailable"]
+
+    sources: list[schemas.RuntimeLogSourceResponse] = []
+    env = _pm2_command_env()
+    for process in processes:
+        result = _run_command(
+            [
+                pm2_bin,
+                "logs",
+                process.name,
+                "--lines",
+                str(line_count),
+                "--nostream",
+            ],
+            env=env,
+            timeout=20,
+        )
+        if result.returncode != 0:
+            warnings.append(f"pm2 log tail failed: {process.name}")
+            sources.append(
+                schemas.RuntimeLogSourceResponse(
+                    source_name=process.name,
+                    source_type="pm2",
+                    status="unavailable",
+                    lines=[],
+                )
+            )
+            continue
+
+        sources.append(
+            schemas.RuntimeLogSourceResponse(
+                source_name=process.name,
+                source_type="pm2",
+                status="available",
+                lines=_sanitize_log_lines(result.stdout, limit=line_count),
+            )
+        )
+
+    return sources, warnings
+
+
+def get_runtime_logs() -> schemas.RuntimeLogsResponse:
+    generated_at = datetime.now(timezone.utc)
+    systemd_logs, systemd_warnings = _collect_systemd_runtime_logs()
+    pm2_logs, pm2_warnings = _collect_pm2_runtime_logs()
+    return schemas.RuntimeLogsResponse(
+        generated_at=generated_at,
+        systemd_logs=systemd_logs,
+        pm2_logs=pm2_logs,
+        warnings=[*systemd_warnings, *pm2_warnings],
+    )
 
 
 def get_ops_dashboard_overview() -> schemas.OpsDashboardResponse:

@@ -4,11 +4,12 @@ import { DashboardRefreshControls } from "@/components/dashboard-refresh-control
 import { DonutMetricCard } from "@/components/donut-metric-card";
 import { EmptyState } from "@/components/empty-state";
 import { PageHeader } from "@/components/page-header";
+import { RuntimeLogSourceCard } from "@/components/runtime-log-source-card";
 import { SectionCard } from "@/components/section-card";
 import { StatusBadge } from "@/components/status-badge";
 import { SummaryCard } from "@/components/summary-card";
 import { formatBytes, formatCount, formatDateTime, formatDuration, formatPercent, formatStatusCode } from "@/lib/format";
-import { getDashboardSummary, getOpsDashboard } from "@/lib/server-api";
+import { getDashboardSummary, getOpsDashboard, getRuntimeLogs } from "@/lib/server-api";
 import type { OpsProcessAttentionLevel, OpsProcessStatus } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
@@ -83,8 +84,13 @@ function groupPm2Processes(processes: OpsProcessStatus[]) {
 
 
 export default async function DashboardPage() {
-  const [summary, overview] = await Promise.all([getDashboardSummary(), getOpsDashboard()]);
+  const [summary, overview, runtimeLogs] = await Promise.all([
+    getDashboardSummary(),
+    getOpsDashboard(),
+    getRuntimeLogs(),
+  ]);
   const pm2Groups = groupPm2Processes(overview.pm2_processes);
+  const dashboardWarnings = Array.from(new Set([...overview.warnings, ...runtimeLogs.warnings]));
 
   return (
     <div className="space-y-6">
@@ -263,12 +269,38 @@ export default async function DashboardPage() {
       </div>
 
       <div className="grid gap-6 xl:grid-cols-[1fr_1fr]">
+        <SectionCard title="systemd 최근 로그" description="핵심 서비스별 최근 30줄을 읽기 전용으로 보여줍니다.">
+          {runtimeLogs.systemd_logs.length === 0 ? (
+            <EmptyState title="표시할 systemd 로그가 없습니다." description="추적 중인 서비스가 없거나 현재 로그를 읽을 수 없습니다." />
+          ) : (
+            <div className="space-y-3">
+              {runtimeLogs.systemd_logs.map((source) => (
+                <RuntimeLogSourceCard key={`${source.source_type}-${source.source_name}`} source={source} />
+              ))}
+            </div>
+          )}
+        </SectionCard>
+
+        <SectionCard title="PM2 최근 로그" description="자동 발견된 PM2 프로세스별 최근 30줄을 읽기 전용으로 보여줍니다.">
+          {runtimeLogs.pm2_logs.length === 0 ? (
+            <EmptyState title="표시할 PM2 로그가 없습니다." description="관리 중인 PM2 프로세스가 없거나 현재 로그를 읽을 수 없습니다." />
+          ) : (
+            <div className="space-y-3">
+              {runtimeLogs.pm2_logs.map((source) => (
+                <RuntimeLogSourceCard key={`${source.source_type}-${source.source_name}`} source={source} />
+              ))}
+            </div>
+          )}
+        </SectionCard>
+      </div>
+
+      <div className="grid gap-6 xl:grid-cols-[1fr_1fr]">
         <SectionCard title="수집 경고" description="상태 수집 중 일부 실패가 있었거나 확인이 필요한 조건입니다.">
-          {overview.warnings.length === 0 ? (
+          {dashboardWarnings.length === 0 ? (
             <EmptyState title="현재 수집 경고가 없습니다." description="PM2와 systemd 조회가 정상적으로 완료됐습니다." />
           ) : (
             <div className="space-y-3">
-              {overview.warnings.map((warning) => (
+              {dashboardWarnings.map((warning) => (
                 <div key={warning} className="rounded-2xl border border-warn/20 bg-warnSoft p-4 text-sm text-warn">
                   {warning}
                 </div>

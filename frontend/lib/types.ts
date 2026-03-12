@@ -179,6 +179,26 @@ export interface HostMetrics {
 }
 
 
+export type RuntimeLogSourceType = "systemd" | "pm2";
+export type RuntimeLogSourceStatus = "available" | "unavailable";
+
+
+export interface RuntimeLogSource {
+  source_name: string;
+  source_type: RuntimeLogSourceType;
+  status: RuntimeLogSourceStatus;
+  lines: string[];
+}
+
+
+export interface RuntimeLogs {
+  generated_at: string;
+  systemd_logs: RuntimeLogSource[];
+  pm2_logs: RuntimeLogSource[];
+  warnings: string[];
+}
+
+
 export interface OpsDashboard {
   generated_at: string;
   overall_status: OpsOverallStatus;

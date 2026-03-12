@@ -28,6 +28,21 @@ def make_process(
 
 
 class OpsDashboardServiceTests(unittest.TestCase):
+    def test_sanitize_log_lines_filters_pm2_banners_and_keeps_recent_lines(self) -> None:
+        lines = ops_dashboard_service._sanitize_log_lines(
+            "\n".join(
+                [
+                    "[TAILING] Tailing last 30 lines",
+                    "[PM2] Some banner",
+                    "2026-03-12T00:00:01 line-1",
+                    "2026-03-12T00:00:02 line-2",
+                ]
+            ),
+            limit=1,
+        )
+
+        self.assertEqual(lines, ["2026-03-12T00:00:02 line-2"])
+
     def test_host_metric_status_uses_thresholds(self) -> None:
         self.assertEqual(ops_dashboard_service._host_metric_status_for_percent(None), "unavailable")
         self.assertEqual(ops_dashboard_service._host_metric_status_for_percent(42.0), "healthy")
@@ -57,6 +72,86 @@ class OpsDashboardServiceTests(unittest.TestCase):
         self.assertEqual(metrics.usage_percent, 70.0)
         self.assertEqual(metrics.status, "healthy")
         self.assertEqual(warnings, [])
+
+    @patch("backend.app.services.ops_dashboard_service._run_command")
+    @patch("backend.app.services.ops_dashboard_service._find_command", return_value="/usr/bin/journalctl")
+    @patch.object(ops_dashboard_service.settings, "ops_systemd_units", "svc-a,svc-b")
+    def test_collect_systemd_runtime_logs_builds_sources(
+        self,
+        _find_command: object,
+        run_command: object,
+    ) -> None:
+        run_command.side_effect = [
+            ops_dashboard_service.CommandResult(stdout="2026-03-12 svc-a line", stderr="", returncode=0),
+            ops_dashboard_service.CommandResult(stdout="2026-03-12 svc-b line", stderr="", returncode=0),
+        ]
+
+        sources, warnings = ops_dashboard_service._collect_systemd_runtime_logs(line_count=30)
+
+        self.assertEqual([item.source_name for item in sources], ["svc-a", "svc-b"])
+        self.assertTrue(all(item.status == "available" for item in sources))
+        self.assertEqual(sources[0].lines, ["2026-03-12 svc-a line"])
+        self.assertEqual(warnings, [])
+
+    @patch("backend.app.services.ops_dashboard_service._run_command")
+    @patch("backend.app.services.ops_dashboard_service._find_command", return_value="/usr/bin/pm2")
+    @patch("backend.app.services.ops_dashboard_service._collect_pm2_processes")
+    def test_collect_pm2_runtime_logs_marks_unavailable_source_on_failure(
+        self,
+        collect_pm2_processes: object,
+        _find_command: object,
+        run_command: object,
+    ) -> None:
+        collect_pm2_processes.return_value = (
+            [
+                make_process("bot-a"),
+            ],
+            [],
+        )
+        run_command.return_value = ops_dashboard_service.CommandResult(stdout="", stderr="boom", returncode=1)
+
+        sources, warnings = ops_dashboard_service._collect_pm2_runtime_logs(line_count=30)
+
+        self.assertEqual(len(sources), 1)
+        self.assertEqual(sources[0].source_name, "bot-a")
+        self.assertEqual(sources[0].status, "unavailable")
+        self.assertIn("pm2 log tail failed: bot-a", warnings)
+
+    @patch("backend.app.services.ops_dashboard_service._collect_pm2_runtime_logs")
+    @patch("backend.app.services.ops_dashboard_service._collect_systemd_runtime_logs")
+    def test_get_runtime_logs_combines_sources_and_warnings(
+        self,
+        collect_systemd_runtime_logs: object,
+        collect_pm2_runtime_logs: object,
+    ) -> None:
+        collect_systemd_runtime_logs.return_value = (
+            [
+                schemas.RuntimeLogSourceResponse(
+                    source_name="svc-a",
+                    source_type="systemd",
+                    status="available",
+                    lines=["a"],
+                )
+            ],
+            ["systemd warning"],
+        )
+        collect_pm2_runtime_logs.return_value = (
+            [
+                schemas.RuntimeLogSourceResponse(
+                    source_name="bot-a",
+                    source_type="pm2",
+                    status="available",
+                    lines=["b"],
+                )
+            ],
+            ["pm2 warning"],
+        )
+
+        response = ops_dashboard_service.get_runtime_logs()
+
+        self.assertEqual(response.systemd_logs[0].source_name, "svc-a")
+        self.assertEqual(response.pm2_logs[0].source_name, "bot-a")
+        self.assertEqual(response.warnings, ["systemd warning", "pm2 warning"])
 
     @patch("backend.app.services.ops_dashboard_service._collect_host_disk_metrics")
     @patch("backend.app.services.ops_dashboard_service._collect_host_memory_metrics")

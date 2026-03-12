@@ -263,6 +263,20 @@ class HostMetricsResponse(BaseModel):
     disk: HostDiskMetricsResponse
 
 
+class RuntimeLogSourceResponse(BaseModel):
+    source_name: str
+    source_type: Literal["systemd", "pm2"]
+    status: Literal["available", "unavailable"]
+    lines: list[str]
+
+
+class RuntimeLogsResponse(BaseModel):
+    generated_at: datetime
+    systemd_logs: list[RuntimeLogSourceResponse]
+    pm2_logs: list[RuntimeLogSourceResponse]
+    warnings: list[str]
+
+
 class OpsDashboardSummaryResponse(BaseModel):
     systemd_total: int
     systemd_healthy: int
