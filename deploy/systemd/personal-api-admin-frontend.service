@@ -1,0 +1,21 @@
+[Unit]
+Description=Personal API Admin Frontend
+After=network.target personal-api-admin-backend.service
+Requires=personal-api-admin-backend.service
+OnFailure=my-api-alert@%p.service
+
+[Service]
+Type=simple
+User=ubuntu
+Group=ubuntu
+WorkingDirectory=/srv/my-api/current/frontend
+EnvironmentFile=/etc/my-api/frontend.env
+ExecStart=/usr/bin/npm run start -- --hostname 127.0.0.1 --port 3000
+Restart=always
+RestartSec=3
+TimeoutStopSec=15
+PrivateTmp=true
+NoNewPrivileges=true
+
+[Install]
+WantedBy=multi-user.target

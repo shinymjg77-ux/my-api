@@ -1,0 +1,4 @@
+SHELL=/bin/bash
+PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+
+17 3 * * * ubuntu /srv/my-api/current/scripts/backup_sqlite.sh >> /var/log/my-api/backup.log 2>&1

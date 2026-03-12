@@ -1,0 +1,143 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --shell: #ebe7dc;
+  --panel: #f8f5ef;
+  --panel-strong: #fffdf9;
+  --line: #d4cfbf;
+  --ink: #18212b;
+  --muted: #5a6470;
+  --accent: #0f766e;
+  --accent-soft: #c8f3eb;
+  --ok: #0f766e;
+  --ok-soft: #d0f2ea;
+  --warn: #b45309;
+  --warn-soft: #f7e3ca;
+  --danger: #b42318;
+  --danger-soft: #f8d7d4;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  min-height: 100%;
+  background:
+    radial-gradient(circle at top left, rgba(15, 118, 110, 0.08), transparent 28%),
+    linear-gradient(180deg, #f6f2e8 0%, #ebe7dc 100%);
+}
+
+body {
+  min-height: 100vh;
+}
+
+@layer base {
+  a {
+    color: inherit;
+    text-decoration: none;
+  }
+
+  input,
+  select,
+  textarea,
+  button {
+    font: inherit;
+  }
+}
+
+@layer components {
+  .panel {
+    @apply rounded-2xl border border-line bg-panel shadow-panel;
+  }
+
+  .panel-strong {
+    @apply rounded-2xl border border-line bg-panelStrong shadow-panel;
+  }
+
+  .field {
+    @apply flex flex-col gap-2;
+  }
+
+  .label {
+    @apply text-sm font-semibold text-ink;
+  }
+
+  .hint {
+    @apply text-xs text-muted;
+  }
+
+  .input {
+    @apply h-11 rounded-xl border border-line bg-white px-4 text-sm text-ink outline-none transition;
+  }
+
+  .select {
+    @apply h-11 rounded-xl border border-line bg-white px-4 text-sm text-ink outline-none transition;
+  }
+
+  .textarea {
+    @apply min-h-28 rounded-xl border border-line bg-white px-4 py-3 text-sm text-ink outline-none transition;
+  }
+
+  .button-primary {
+    @apply inline-flex h-11 items-center justify-center rounded-xl bg-ink px-4 text-sm font-semibold text-white transition disabled:cursor-not-allowed;
+  }
+
+  .button-secondary {
+    @apply inline-flex h-11 items-center justify-center rounded-xl border border-line bg-white px-4 text-sm font-semibold text-ink transition hover:border-ink hover:bg-panelStrong disabled:cursor-not-allowed disabled:opacity-60;
+  }
+
+  .button-danger {
+    @apply inline-flex h-11 items-center justify-center rounded-xl border bg-dangerSoft px-4 text-sm font-semibold text-danger transition;
+    border-color: rgba(180, 35, 24, 0.3);
+  }
+
+  .table-shell {
+    @apply overflow-hidden rounded-2xl border border-line bg-panelStrong;
+  }
+
+  .table {
+    @apply min-w-full divide-y divide-line text-left text-sm;
+  }
+
+  .table thead {
+    @apply bg-panel;
+  }
+
+  .table th {
+    @apply px-4 py-3 text-xs font-semibold uppercase tracking-[0.14em] text-muted;
+  }
+
+  .table td {
+    @apply px-4 py-4 align-top text-sm text-ink;
+  }
+
+  .table tbody tr {
+    @apply border-t border-line;
+  }
+
+  .metric-value {
+    @apply font-mono text-3xl font-semibold tracking-tight text-ink;
+  }
+}
+
+.input:focus,
+.select:focus,
+.textarea:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 4px rgba(15, 118, 110, 0.16);
+}
+
+.button-primary:hover {
+  background-color: rgba(24, 33, 43, 0.92);
+}
+
+.button-primary:disabled {
+  background-color: rgba(24, 33, 43, 0.5);
+}
+
+.button-danger:hover {
+  border-color: var(--danger);
+}

@@ -1,0 +1,10 @@
+[Unit]
+Description=Personal API Admin Failure Alert for %i
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=ubuntu
+Group=ubuntu
+ExecStart=/bin/bash -lc '/srv/my-api/current/scripts/send_alert.sh "Systemd failure" "unit=%i host=$(hostname)"'

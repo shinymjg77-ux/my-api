@@ -1,0 +1,31 @@
+# Local secrets
+.env
+.env.*
+!.env.example
+!backend/.env.example
+!frontend/.env.example
+!deploy/env/*.example
+
+# Python
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+
+# Node / Next.js
+frontend/node_modules/
+frontend/.next/
+frontend/out/
+
+# Local data and logs
+data/
+backups/
+*.log
+
+# Tooling
+.omx/
+
+# OS / editor
+.DS_Store
+Thumbs.db
