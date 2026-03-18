@@ -292,3 +292,108 @@ Nginx가 정해 둔 길 하나로 부르게 하면 운영이 단순해진다.
 `n8n`이 Docker 안에 있으면 `127.0.0.1`은 서버 자신이 아니라 컨테이너 자신이다.  
 그래서 이번 문제는 `market_api`가 죽은 게 아니라, `n8n`이 잘못된 문을 두드린 것이었다.  
 해결은 `Nginx`를 통해 올바른 문을 만들어 주는 것이었다.
+
+## 10. 또 다른 유형: DNS 조회 실패
+
+나중에 운영에서 아래처럼 다른 실패 메시지가 올 수 있다.
+
+```text
+운영 상태 체크 실패
+getaddrinfo EAIAGAIN ansan-jarvis.duckdns.org
+```
+
+이건 앞에서 설명한 `127.0.0.1` 문제와는 다르다.
+이번에는 길은 맞았지만, `n8n`이 `ansan-jarvis.duckdns.org` 라는 이름을 IP 주소로 바꾸는 데 실패한 것이다.
+
+쉽게 말하면 이렇다.
+
+- 이전 문제: 문 주소를 잘못 적음
+- 이번 문제: 주소록을 펼쳤는데 이름 검색이 잠깐 안 됨
+
+즉, 이 경우는 API가 죽었다기보다 **DNS 조회가 일시적으로 실패한 것**일 가능성이 크다.
+
+### 10-1. 먼저 확인할 것
+
+서버 바깥에서 도메인이 살아 있는지 본다.
+
+```bash
+curl https://ansan-jarvis.duckdns.org/healthz
+```
+
+정상이면 이런 식으로 나온다.
+
+```json
+{"status":"ok"}
+```
+
+이렇게 나오면 도메인 자체가 영구적으로 죽은 것은 아니다.
+
+### 10-2. `n8n` 컨테이너 안 DNS 확인
+
+`n8n` 컨테이너가 실제로 어떤 DNS 서버를 보고 있는지 확인한다.
+
+```bash
+docker exec n8n sh -lc 'cat /etc/resolv.conf'
+```
+
+그리고 컨테이너 안에서 이름 조회가 되는지 바로 확인한다.
+
+```bash
+docker exec n8n node -e 'require("dns").lookup("ansan-jarvis.duckdns.org", console.log)'
+```
+
+정상이라면 IP 하나가 나온다.
+
+예:
+
+```text
+null 193.122.119.107 4
+```
+
+### 10-3. 운영 상태 체크 API까지 한 번에 확인
+
+DNS만 말고 실제 HTTPS 호출도 같이 확인한다.
+
+```bash
+docker exec n8n node -e '(async()=>{try{const r=await fetch("https://ansan-jarvis.duckdns.org/api/proxy/jobs/ops-check",{headers:{"X-Job-Secret":"<JOB_SHARED_SECRET>"}});console.log(r.status, await r.text())}catch(e){console.log(e.message)}})()'
+```
+
+여기서 `401 Invalid job secret` 이 나오면 DNS는 된 것이고, 시크릿만 빠진 것이다.
+즉, `EAIAGAIN` 과 `401` 은 완전히 다른 문제다.
+
+### 10-4. 고치는 방법
+
+가장 안전한 방법은 `n8n` 컨테이너 DNS를 명시적으로 고정하는 것이다.
+
+권장값:
+
+- `1.1.1.1`
+- `8.8.8.8`
+
+`docker compose` 라면:
+
+```yaml
+services:
+  n8n:
+    dns:
+      - 1.1.1.1
+      - 8.8.8.8
+```
+
+`docker run` 이나 systemd로 띄운다면 `--dns 1.1.1.1 --dns 8.8.8.8` 를 넣는다.
+
+그리고 `Ops alert` 워크플로우는 아래처럼 잡는 것이 좋다.
+
+- 요청 타임아웃: 10초
+- 재시도: 3회
+- 시도 간 대기: 5초
+- 텔레그램 실패 알림: 모든 재시도 실패 후 1회만 발송
+
+### 10-5. 하지 말아야 할 것
+
+겉으로 편해 보여도 아래 방식은 기본 해법으로 쓰지 않는 것이 좋다.
+
+- `/etc/hosts` 에 DuckDNS 도메인을 고정 IP로 박아 두기
+- `extra_hosts` 로 DuckDNS를 정적 매핑하기
+
+DuckDNS 는 IP가 바뀔 수 있기 때문에, 정적 매핑은 나중에 더 큰 장애를 만들 수 있다.

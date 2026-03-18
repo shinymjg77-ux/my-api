@@ -1,0 +1,15 @@
+[Unit]
+Description=n8n (Docker)
+After=docker.service network-online.target
+Requires=docker.service
+
+[Service]
+Type=simple
+Restart=always
+RestartSec=5
+ExecStartPre=-/usr/bin/docker rm -f n8n
+ExecStart=/usr/bin/docker run --name n8n --pull=always --dns 1.1.1.1 --dns 8.8.8.8 -p 5678:5678 -e N8N_HOST=ansan-jarvis.duckdns.org -e N8N_PROTOCOL=https -e WEBHOOK_URL=https://ansan-jarvis.duckdns.org/ -v n8n_data:/home/node/.n8n docker.n8n.io/n8nio/n8n:latest
+ExecStop=/usr/bin/docker stop n8n
+
+[Install]
+WantedBy=multi-user.target

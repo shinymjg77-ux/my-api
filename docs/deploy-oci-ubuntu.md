@@ -191,6 +191,41 @@ https://ansan-jarvis.duckdns.org/internal/market-api/api/v1/briefings/morning
 https://ansan-jarvis.duckdns.org/internal/market-api/api/v1/jobs/rsi-check
 ```
 
+## 4-2. n8n DNS 안정화
+
+최근 운영에서는 `Ops alert` 가 아래와 같은 메시지로 실패한 적이 있었다.
+
+```text
+getaddrinfo EAIAGAIN ansan-jarvis.duckdns.org
+```
+
+이 오류는 백엔드나 프록시 인증 이전에, `n8n` 컨테이너가 도메인 이름을 DNS로 해석하지 못했다는 뜻이다.
+운영에서 `n8n` 을 Docker 컨테이너로 돌린다면, 컨테이너 DNS를 명시적으로 고정하는 편이 안정적이다.
+
+기본값:
+
+- `1.1.1.1`
+- `8.8.8.8`
+
+`docker compose` 를 쓴다면 [deploy/docker/n8n.compose.example.yml](../deploy/docker/n8n.compose.example.yml) 예시처럼 `dns:` 를 추가한다.
+
+```yaml
+services:
+  n8n:
+    image: docker.n8n.io/n8nio/n8n:latest
+    dns:
+      - 1.1.1.1
+      - 8.8.8.8
+```
+
+이미 `docker run` 기반으로 운영 중이면 [deploy/systemd/n8n-docker.service.example](../deploy/systemd/n8n-docker.service.example) 예시처럼 `--dns 1.1.1.1 --dns 8.8.8.8` 옵션을 추가한다.
+
+중요:
+
+- DuckDNS 도메인을 `/etc/hosts` 나 `extra_hosts` 로 고정 IP 매핑하지 않는다.
+- DuckDNS 는 공인 IP가 바뀔 수 있으므로, 정적 매핑은 더 큰 장애를 만들 수 있다.
+- `Ops alert` 의 호출 대상 URL은 계속 `https://ansan-jarvis.duckdns.org/api/proxy/jobs/ops-check` 를 사용한다.
+
 ## 5. 백엔드 빌드 및 실행 준비
 
 ```bash
@@ -309,6 +344,24 @@ curl -H "X-Job-Secret: <JOB_SHARED_SECRET>" "https://admin.example.com/api/proxy
 
 현재 운영에서는 `n8n`이 관리자 프론트의 `/api/proxy/jobs/ops-check` 를 호출하고, Next.js 프록시가 `X-Job-Secret` 헤더를 백엔드로 그대로 전달한다.
 
+`Ops alert` 워크플로우 권장값:
+
+- 요청 URL: `GET https://ansan-jarvis.duckdns.org/api/proxy/jobs/ops-check`
+- 헤더: `X-Job-Secret: <JOB_SHARED_SECRET>`
+- 요청 타임아웃: `10초`
+- 재시도 횟수: `3회`
+- 시도 간 대기: `5초`
+- 실패 텔레그램 발송 조건: 모든 재시도 실패 후 1회만 발송
+
+실패 알림 문구는 원문 오류를 유지하면서 앞에 분류 문구를 붙이는 편이 좋다.
+
+예:
+
+```text
+DNS lookup failed
+getaddrinfo EAIAGAIN ansan-jarvis.duckdns.org
+```
+
 ## 7. systemd 등록
 
 예시 유닛 파일은 저장소의 아래 파일을 사용한다.
@@ -417,6 +470,16 @@ curl https://admin.example.com/healthz
 - `My workflow`: 미국 증시 브리핑 + QLD RSI 발송
 - `Ops alert`: 10분 주기 운영 이상 감지 알림
 
+`n8n` 컨테이너 DNS 점검:
+
+```bash
+docker exec n8n sh -lc 'cat /etc/resolv.conf'
+docker exec n8n node -e 'require("dns").lookup("ansan-jarvis.duckdns.org", console.log)'
+docker exec n8n node -e '(async()=>{try{const r=await fetch("https://ansan-jarvis.duckdns.org/api/proxy/jobs/ops-check",{headers:{"X-Job-Secret":"<JOB_SHARED_SECRET>"}});console.log(r.status, await r.text())}catch(e){console.log(e.message)}})()'
+```
+
+반복 점검이 필요하면 [scripts/check_n8n_dns.sh](../scripts/check_n8n_dns.sh) 를 서버에 복사해서 사용할 수 있다.
+
 ## 11. 업데이트 배포 절차
 
 코드 업데이트 시에는 아래 순서가 안전하다.
@@ -453,6 +516,8 @@ sudo systemctl reload nginx
 - `market-api.env` 권한이 너무 넓으면 운영 보안상 좋지 않다.
 - SQLite 파일 경로의 상위 디렉터리가 없거나 권한이 없으면 백엔드 초기화가 실패한다.
 - `market_api` 는 내부 서비스이므로 Nginx에 공개 라우팅을 추가하지 않는다.
+- `n8n` 컨테이너 DNS가 불안정하면 `getaddrinfo EAIAGAIN ansan-jarvis.duckdns.org` 로 운영 상태 조회가 실패할 수 있다.
+- `Ops alert` 에 재시도가 없으면 일시적인 DNS 실패만으로 텔레그램 장애 알림이 발송될 수 있다.
 
 ## 13. SQLite 백업 cron
 
