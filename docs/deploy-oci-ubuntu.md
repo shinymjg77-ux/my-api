@@ -92,7 +92,11 @@ BOOTSTRAP_ADMIN_PASSWORD=change-this-now
 DASHBOARD_WINDOW_DAYS=7
 LOG_PAGE_SIZE_DEFAULT=20
 LOG_PAGE_SIZE_MAX=100
+MANAGED_API_ADMIN_BASE_URL=http://127.0.0.1:8000
+MANAGED_API_MARKET_BASE_URL=http://127.0.0.1:8100
 ```
+
+`MANAGED_API_ADMIN_BASE_URL` 와 `MANAGED_API_MARKET_BASE_URL` 는 관리자 콘솔이 시작될 때 `managed_apis` 기본 항목을 자동 등록할 때 사용한다. 운영 환경에서 내부 호출 주소가 바뀌면 이 값을 같이 맞춰야 한다.
 
 `SECRET_KEY` 생성 예시:
 
@@ -221,6 +225,15 @@ curl http://127.0.0.1:8000/healthz
 {"status":"ok"}
 ```
 
+관리자 백엔드가 처음 올라오면 아래 기본 API가 `managed_apis`에 자동 등록된다.
+
+- `platform/admin`
+- `platform/admin/dashboard`
+- `market/health`
+- `market/briefings`
+- `market/signals`
+- `market/status`
+
 ## 6. 프론트엔드 빌드 및 실행 준비
 
 ```bash
@@ -247,6 +260,8 @@ npm run start -- --hostname 127.0.0.1 --port 3000
 ```bash
 curl -I http://127.0.0.1:3000/login
 ```
+
+브라우저에서 `/apis`를 열면 왼쪽에는 API 계층 트리, 오른쪽에는 선택한 API 상세 패널이 보여야 한다. 이 화면에는 수동 신규 등록 폼이 없고, 자동 등록된 기본 API와 기존 저장된 API를 탐색/수정하는 용도로 사용한다.
 
 ## 6-1. 시장 신호 API 실행 준비
 
