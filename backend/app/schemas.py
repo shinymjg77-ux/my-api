@@ -43,6 +43,7 @@ class AdminPasswordChangeRequest(BaseModel):
 
 class ManagedAPIBase(BaseModel):
     name: str = Field(..., min_length=2, max_length=100)
+    group_path: str | None = Field(default=None, max_length=255)
     url: str = Field(..., min_length=10, max_length=500)
     method: HTTPMethod
     description: str | None = Field(default=None, max_length=2000)
@@ -52,6 +53,17 @@ class ManagedAPIBase(BaseModel):
     @classmethod
     def normalize_name(cls, value: str) -> str:
         return value.strip()
+
+    @field_validator("group_path", mode="before")
+    @classmethod
+    def normalize_group_path(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        normalized = str(value).replace("\\", "/").strip()
+        if not normalized:
+            return None
+        parts = [part.strip() for part in normalized.split("/") if part.strip()]
+        return "/".join(parts) or None
 
     @field_validator("url")
     @classmethod
@@ -68,6 +80,7 @@ class ManagedAPICreate(ManagedAPIBase):
 
 class ManagedAPIUpdate(BaseModel):
     name: str | None = Field(default=None, min_length=2, max_length=100)
+    group_path: str | None = Field(default=None, max_length=255)
     url: str | None = Field(default=None, min_length=10, max_length=500)
     method: HTTPMethod | None = None
     description: str | None = Field(default=None, max_length=2000)
@@ -79,6 +92,17 @@ class ManagedAPIUpdate(BaseModel):
         if value is None:
             return None
         return value.strip()
+
+    @field_validator("group_path", mode="before")
+    @classmethod
+    def normalize_optional_group_path(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        normalized = str(value).replace("\\", "/").strip()
+        if not normalized:
+            return None
+        parts = [part.strip() for part in normalized.split("/") if part.strip()]
+        return "/".join(parts) or None
 
     @field_validator("url")
     @classmethod
@@ -96,6 +120,7 @@ class ManagedAPIResponse(BaseModel):
 
     id: int
     name: str
+    group_path: str | None
     url: str
     method: str
     description: str | None

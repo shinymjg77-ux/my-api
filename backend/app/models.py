@@ -33,6 +33,7 @@ class ManagedAPI(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
     name: Mapped[str] = mapped_column(String(100), unique=True, nullable=False, index=True)
+    group_path: Mapped[str | None] = mapped_column(String(255), nullable=True, index=True)
     url: Mapped[str] = mapped_column(String(500), nullable=False)
     method: Mapped[str] = mapped_column(String(10), nullable=False)
     description: Mapped[str | None] = mapped_column(Text, nullable=True)

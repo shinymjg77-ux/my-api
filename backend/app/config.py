@@ -37,6 +37,8 @@ class Settings(BaseSettings):
     dashboard_window_days: int = 7
     log_page_size_default: int = 20
     log_page_size_max: int = 100
+    managed_api_admin_base_url: str = "http://127.0.0.1:8000"
+    managed_api_market_base_url: str = "http://127.0.0.1:8100"
     ops_systemd_units: str = (
         "personal-api-admin-backend.service,"
         "personal-api-admin-frontend.service,"
@@ -50,6 +52,11 @@ class Settings(BaseSettings):
         if isinstance(value, list):
             return value
         return [item.strip() for item in value.split(",") if item.strip()]
+
+    @field_validator("managed_api_admin_base_url", "managed_api_market_base_url")
+    @classmethod
+    def normalize_managed_api_base_url(cls, value: str) -> str:
+        return value.strip().rstrip("/")
 
     @property
     def ops_systemd_units_list(self) -> list[str]:

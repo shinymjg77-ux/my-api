@@ -45,12 +45,17 @@ def update_admin_password(db: Session, admin: models.Admin, password: str) -> mo
 
 
 def list_managed_apis(db: Session, is_active: bool | None = None, query: str | None = None) -> list[models.ManagedAPI]:
-    stmt: Select[tuple[models.ManagedAPI]] = select(models.ManagedAPI).order_by(models.ManagedAPI.created_at.desc())
+    stmt: Select[tuple[models.ManagedAPI]] = select(models.ManagedAPI).order_by(
+        func.coalesce(models.ManagedAPI.group_path, ""),
+        models.ManagedAPI.name,
+    )
     if is_active is not None:
         stmt = stmt.where(models.ManagedAPI.is_active == is_active)
     if query:
         like_term = f"%{query.strip()}%"
-        stmt = stmt.where(models.ManagedAPI.name.ilike(like_term))
+        stmt = stmt.where(
+            models.ManagedAPI.name.ilike(like_term) | models.ManagedAPI.group_path.ilike(like_term)
+        )
     return list(db.scalars(stmt).all())
 
 

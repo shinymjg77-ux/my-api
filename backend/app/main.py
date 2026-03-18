@@ -4,18 +4,20 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from .config import settings
-from .database import Base, SessionLocal, engine, ensure_sqlite_directory
+from .database import Base, SessionLocal, engine, ensure_sqlite_directory, ensure_sqlite_schema
 from .routers import apis, auth, dashboard, db_connections, logs
-from .seed import bootstrap_admin
+from .seed import bootstrap_admin, bootstrap_managed_apis
 
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
     ensure_sqlite_directory()
     Base.metadata.create_all(bind=engine)
+    ensure_sqlite_schema()
 
     with SessionLocal() as db:
         bootstrap_admin(db)
+        bootstrap_managed_apis(db)
 
     yield
 

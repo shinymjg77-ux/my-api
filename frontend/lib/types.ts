@@ -17,6 +17,7 @@ export interface Admin {
 export interface ManagedApi {
   id: number;
   name: string;
+  group_path: string | null;
   url: string;
   method: HttpMethod;
   description: string | null;
@@ -28,6 +29,7 @@ export interface ManagedApi {
 
 export interface ManagedApiInput {
   name: string;
+  group_path: string;
   url: string;
   method: HttpMethod;
   description: string;

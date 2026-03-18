@@ -26,14 +26,14 @@ export default async function ApisPage({
       <PageHeader
         eyebrow="APIs"
         title="API 엔드포인트 관리"
-        description="운영 대상 API의 URL, 메서드, 설명, 활성 상태를 관리합니다."
+        description="왼쪽 계층 트리에서 API를 탐색하고, 오른쪽 상세 패널에서 메타데이터를 수정합니다."
       />
 
       <section className="panel p-5">
         <form className="grid gap-4 md:grid-cols-[minmax(0,1fr)_220px_auto]" method="GET">
           <label className="field">
-            <span className="label">이름 검색</span>
-            <input className="input" name="q" defaultValue={query} placeholder="API 이름으로 검색" />
+            <span className="label">이름 또는 그룹 검색</span>
+            <input className="input" name="q" defaultValue={query} placeholder="API 이름 또는 market/signals" />
           </label>
 
           <label className="field">
