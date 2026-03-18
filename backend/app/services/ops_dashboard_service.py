@@ -43,14 +43,28 @@ def _find_command(name: str, fallbacks: tuple[str, ...]) -> str | None:
 
 
 def _run_command(command: list[str], *, env: dict[str, str] | None = None, timeout: int = 10) -> CommandResult:
-    completed = subprocess.run(
-        command,
-        capture_output=True,
-        text=True,
-        env=env,
-        timeout=timeout,
-        check=False,
-    )
+    try:
+        completed = subprocess.run(
+            command,
+            capture_output=True,
+            text=True,
+            env=env,
+            timeout=timeout,
+            check=False,
+        )
+    except subprocess.TimeoutExpired:
+        return CommandResult(
+            stdout="",
+            stderr=f"command timed out after {timeout}s: {' '.join(command)}",
+            returncode=124,
+        )
+    except OSError as exc:
+        return CommandResult(
+            stdout="",
+            stderr=str(exc),
+            returncode=127,
+        )
+
     return CommandResult(
         stdout=completed.stdout.strip(),
         stderr=completed.stderr.strip(),

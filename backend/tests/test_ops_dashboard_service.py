@@ -1,4 +1,5 @@
 import unittest
+from subprocess import TimeoutExpired
 from unittest.mock import patch
 
 from backend.app import schemas
@@ -28,6 +29,15 @@ def make_process(
 
 
 class OpsDashboardServiceTests(unittest.TestCase):
+    @patch("backend.app.services.ops_dashboard_service.subprocess.run")
+    def test_run_command_returns_timeout_result_when_subprocess_hangs(self, subprocess_run: object) -> None:
+        subprocess_run.side_effect = TimeoutExpired(cmd=["pm2", "jlist"], timeout=15)
+
+        result = ops_dashboard_service._run_command(["pm2", "jlist"], timeout=15)
+
+        self.assertEqual(result.returncode, 124)
+        self.assertIn("command timed out after 15s", result.stderr)
+
     def test_sanitize_log_lines_filters_pm2_banners_and_keeps_recent_lines(self) -> None:
         lines = ops_dashboard_service._sanitize_log_lines(
             "\n".join(
@@ -92,6 +102,45 @@ class OpsDashboardServiceTests(unittest.TestCase):
         self.assertTrue(all(item.status == "available" for item in sources))
         self.assertEqual(sources[0].lines, ["2026-03-12 svc-a line"])
         self.assertEqual(warnings, [])
+
+    @patch("backend.app.services.ops_dashboard_service._run_command")
+    @patch("backend.app.services.ops_dashboard_service._find_command", return_value="/usr/bin/systemctl")
+    @patch.object(ops_dashboard_service.settings, "ops_systemd_units", "svc-a")
+    def test_collect_systemd_services_downgrades_timeout_to_warning(
+        self,
+        _find_command: object,
+        run_command: object,
+    ) -> None:
+        run_command.return_value = ops_dashboard_service.CommandResult(
+            stdout="",
+            stderr="command timed out after 10s: /usr/bin/systemctl show svc-a",
+            returncode=124,
+        )
+
+        services, warnings = ops_dashboard_service._collect_systemd_services()
+
+        self.assertEqual(len(services), 1)
+        self.assertEqual(services[0].name, "svc-a")
+        self.assertFalse(services[0].is_healthy)
+        self.assertIn("systemd lookup failed: svc-a", warnings)
+
+    @patch("backend.app.services.ops_dashboard_service._run_command")
+    @patch("backend.app.services.ops_dashboard_service._find_command", return_value="/usr/bin/pm2")
+    def test_collect_pm2_processes_returns_warning_when_lookup_times_out(
+        self,
+        _find_command: object,
+        run_command: object,
+    ) -> None:
+        run_command.return_value = ops_dashboard_service.CommandResult(
+            stdout="",
+            stderr="command timed out after 15s: /usr/bin/pm2 jlist",
+            returncode=124,
+        )
+
+        processes, warnings = ops_dashboard_service._collect_pm2_processes()
+
+        self.assertEqual(processes, [])
+        self.assertIn("pm2 lookup failed: command timed out after 15s: /usr/bin/pm2 jlist", warnings)
 
     @patch("backend.app.services.ops_dashboard_service._run_command")
     @patch("backend.app.services.ops_dashboard_service._find_command", return_value="/usr/bin/pm2")
