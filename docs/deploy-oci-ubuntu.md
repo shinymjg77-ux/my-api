@@ -634,3 +634,16 @@ chmod +x scripts/deploy_release.sh scripts/remote_activate_release.sh
 
 - 이 방식은 단일 `uvicorn` 프로세스를 재시작하므로 백엔드 전환 시 수초 수준의 짧은 끊김은 남는다.
 - 프런트 빌드와 의존성 설치는 전환 전에 끝내므로 체감 중단은 최소화한다.
+
+## 17. 추후 개선 작업
+
+오늘 기준 운영 반영은 앱 코드 배포와 `n8n` 실운영 설정 수정이 분리되어 있다.
+다음 개발 작업은 아래 문서를 기준으로 진행하면 된다.
+
+- [docs/operational-followups.md](./operational-followups.md)
+
+핵심 방향:
+
+- 로컬 Git / 원격 배포본 / 실행 중 서비스 버전을 한 번에 확인할 수 있게 만들기
+- `n8n` 실운영 설정도 저장소 기준으로 관리해 드리프트를 줄이기
+- 현재의 짧은 재시작 방식에서 blue-green 전환 기반 무중단에 가까운 배포로 확장하기
