@@ -1,12 +1,13 @@
 # my-api
 
 FastAPI 백엔드와 Next.js 관리자 프론트엔드로 구성된 개인 운영용 API 관리 콘솔입니다.  
-API 엔드포인트, DB 연결, 운영 로그, 관리자 계정 보안 설정을 한 화면에서 다룰 수 있게 구성했습니다.
+운영 콘솔은 API 엔드포인트, DB 연결, 운영 로그, 관리자 계정 보안 설정을 관리하고, 시장 신호 계산용 API는 같은 저장소 안의 별도 서비스 경로로 분리해 둡니다.
 
 ## 구성
 
-- `backend/`: FastAPI, SQLAlchemy, SQLite/PostgreSQL 지원
+- `backend/`: FastAPI 기반 관리자 백엔드
 - `frontend/`: Next.js App Router, Tailwind 기반 관리자 UI
+- `services/market_api/`: QLD RSI / 미국 지수 브리핑 전용 독립 FastAPI 서비스
 - `deploy/`: Nginx, systemd, cron, logrotate 예시 설정
 - `scripts/`: 배포, 백업, 알림, 백업 업로드 스크립트
 - `docs/`: OCI Ubuntu 배포 문서
@@ -19,6 +20,7 @@ API 엔드포인트, DB 연결, 운영 로그, 관리자 계정 보안 설정을
 - 운영 로그 조회
 - 관리자 비밀번호 변경 UI
 - SQLite 백업, 원격 업로드 훅, 장애 알림 훅
+- 시장 신호/브리핑은 `services/market_api`에서 별도 제공
 
 ## 로컬 실행
 
@@ -57,6 +59,19 @@ npm run dev
 
 - 프론트엔드: `http://127.0.0.1:3000`
 - 백엔드 헬스체크: `http://127.0.0.1:8000/healthz`
+
+### 3. 시장 신호 서비스
+
+```bash
+cd services/market_api
+../../.venv/bin/pip install -r requirements.txt
+cp .env.example .env
+../../.venv/bin/uvicorn app.main:app --reload --host 127.0.0.1 --port 8100
+```
+
+기본 접속:
+
+- 시장 신호 API 헬스체크: `http://127.0.0.1:8100/healthz`
 
 ## 운영 배포
 

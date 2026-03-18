@@ -1,0 +1,20 @@
+[Unit]
+Description=Personal Market API
+After=network.target
+OnFailure=my-api-alert@%p.service
+
+[Service]
+Type=simple
+User=ubuntu
+Group=ubuntu
+WorkingDirectory=/srv/my-api/current/services/market_api
+EnvironmentFile=/etc/my-api/market-api.env
+ExecStart=/bin/sh -lc '/srv/my-api/.venv/bin/uvicorn app.main:app --host "${MARKET_API_BIND_HOST:-127.0.0.1}" --port "${MARKET_API_PORT:-8100}" --proxy-headers'
+Restart=always
+RestartSec=3
+TimeoutStopSec=15
+PrivateTmp=true
+NoNewPrivileges=true
+
+[Install]
+WantedBy=multi-user.target

@@ -5,6 +5,7 @@
 !backend/.env.example
 !frontend/.env.example
 !deploy/env/*.example
+!services/market_api/.env.example
 
 # Python
 .venv/

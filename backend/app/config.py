@@ -40,6 +40,7 @@ class Settings(BaseSettings):
     ops_systemd_units: str = (
         "personal-api-admin-backend.service,"
         "personal-api-admin-frontend.service,"
+        "personal-market-api.service,"
         "nginx.service"
     )
 

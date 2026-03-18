@@ -5,6 +5,7 @@
 - `Nginx`: 외부 진입점, HTTPS 종료, 리버스 프록시
 - `FastAPI`: `127.0.0.1:8000`
 - `Next.js`: `127.0.0.1:3000`
+- `market_api`: `127.0.0.1:8100` 또는 서버 private IP `:8100`, 내부 전용
 - `systemd`: 백엔드/프론트엔드 프로세스 관리
 - `SQLite`: `/srv/my-api/data/app.db`
 - `릴리스 전환`: `/srv/my-api/releases/<timestamp>` 와 `/srv/my-api/current`
@@ -131,6 +132,62 @@ BACKEND_BASE_URL=http://127.0.0.1:8000
 BACKEND_API_PREFIX=/api/v1
 ```
 
+## 4-1. 시장 신호 API 환경변수 설정
+
+예시 파일은 저장소의 [deploy/env/market-api.env.example](../deploy/env/market-api.env.example) 를 기준으로 한다.
+
+```bash
+sudo cp /srv/my-api/deploy/env/market-api.env.example /etc/my-api/market-api.env
+sudo chmod 600 /etc/my-api/market-api.env
+sudo nano /etc/my-api/market-api.env
+```
+
+예시 내용:
+
+```env
+APP_NAME=Market Signal API
+ENVIRONMENT=production
+DEBUG=false
+API_PREFIX=/api/v1
+
+JOB_SHARED_SECRET=replace-with-a-long-random-job-secret
+DATABASE_URL=sqlite:////srv/my-api/services/market_api/data/app.db
+MARKET_API_BIND_HOST=127.0.0.1
+MARKET_API_PORT=8100
+
+MARKET_RSI_SYMBOL=QLD
+MARKET_RSI_PERIOD=14
+MARKET_RSI_THRESHOLD=30
+MARKET_BRIEFING_SYMBOLS=^GSPC,^IXIC
+```
+
+`market_api`를 서버 셸에서만 호출하면 `MARKET_API_BIND_HOST=127.0.0.1`로 충분하다.
+
+`n8n`이 Docker 컨테이너로 실행 중이면, 컨테이너가 호스트 loopback에 접근할 수 없으므로 `MARKET_API_BIND_HOST`를 서버 private IP로 바꿔야 한다. 예:
+
+```env
+MARKET_API_BIND_HOST=10.0.0.68
+MARKET_API_PORT=8100
+```
+
+서버 네트워크 정책 때문에 Docker 컨테이너가 호스트 private IP에도 직접 접근하지 못하는 경우가 있다. 이 경우에는 `market_api`를 계속 `127.0.0.1`에 두고, Nginx에 내부 프록시 경로를 추가한 뒤 `n8n`은 HTTPS 경로를 호출하면 된다.
+
+예시:
+
+```nginx
+location ^~ /internal/market-api/ {
+    proxy_pass http://127.0.0.1:8100/;
+    proxy_read_timeout 30s;
+}
+```
+
+이 경우 `n8n` 호출 URL은 아래처럼 잡는다.
+
+```text
+https://ansan-jarvis.duckdns.org/internal/market-api/api/v1/briefings/morning
+https://ansan-jarvis.duckdns.org/internal/market-api/api/v1/jobs/rsi-check
+```
+
 ## 5. 백엔드 빌드 및 실행 준비
 
 ```bash
@@ -191,23 +248,64 @@ npm run start -- --hostname 127.0.0.1 --port 3000
 curl -I http://127.0.0.1:3000/login
 ```
 
+## 6-1. 시장 신호 API 실행 준비
+
+```bash
+cd /srv/my-api
+source .venv/bin/activate
+pip install -r services/market_api/requirements.txt
+mkdir -p /srv/my-api/services/market_api/data
+```
+
+수동 실행 확인:
+
+```bash
+cd /srv/my-api/current/services/market_api
+set -a
+source /etc/my-api/market-api.env
+set +a
+/srv/my-api/.venv/bin/uvicorn app.main:app --host "${MARKET_API_BIND_HOST:-127.0.0.1}" --port "${MARKET_API_PORT:-8100}" --proxy-headers
+```
+
+다른 터미널에서 헬스체크:
+
+```bash
+curl "http://${MARKET_API_BIND_HOST:-127.0.0.1}:${MARKET_API_PORT:-8100}/healthz"
+```
+
+브리핑 확인:
+
+```bash
+curl -H "X-Job-Secret: <JOB_SHARED_SECRET>" "http://${MARKET_API_BIND_HOST:-127.0.0.1}:${MARKET_API_PORT:-8100}/api/v1/briefings/morning"
+```
+
+RSI 확인:
+
+```bash
+curl -X POST -H "X-Job-Secret: <JOB_SHARED_SECRET>" "http://${MARKET_API_BIND_HOST:-127.0.0.1}:${MARKET_API_PORT:-8100}/api/v1/jobs/rsi-check"
+```
+
 ## 7. systemd 등록
 
 예시 유닛 파일은 저장소의 아래 파일을 사용한다.
 
 - [deploy/systemd/personal-api-admin-backend.service](../deploy/systemd/personal-api-admin-backend.service)
 - [deploy/systemd/personal-api-admin-frontend.service](../deploy/systemd/personal-api-admin-frontend.service)
+- [deploy/systemd/personal-market-api.service](../deploy/systemd/personal-market-api.service)
 
 서버에 복사:
 
 ```bash
 sudo cp /srv/my-api/deploy/systemd/personal-api-admin-backend.service /etc/systemd/system/
 sudo cp /srv/my-api/deploy/systemd/personal-api-admin-frontend.service /etc/systemd/system/
+sudo cp /srv/my-api/deploy/systemd/personal-market-api.service /etc/systemd/system/
 sudo systemctl daemon-reload
 sudo systemctl enable personal-api-admin-backend
 sudo systemctl enable personal-api-admin-frontend
+sudo systemctl enable personal-market-api
 sudo systemctl start personal-api-admin-backend
 sudo systemctl start personal-api-admin-frontend
+sudo systemctl start personal-market-api
 ```
 
 상태 확인:
@@ -215,6 +313,7 @@ sudo systemctl start personal-api-admin-frontend
 ```bash
 sudo systemctl status personal-api-admin-backend --no-pager
 sudo systemctl status personal-api-admin-frontend --no-pager
+sudo systemctl status personal-market-api --no-pager
 ```
 
 로그 확인:
@@ -222,6 +321,7 @@ sudo systemctl status personal-api-admin-frontend --no-pager
 ```bash
 sudo journalctl -u personal-api-admin-backend -n 100 --no-pager
 sudo journalctl -u personal-api-admin-frontend -n 100 --no-pager
+sudo journalctl -u personal-market-api -n 100 --no-pager
 ```
 
 ## 8. Nginx 설정
@@ -285,6 +385,7 @@ curl https://admin.example.com/healthz
 - API 등록/수정 가능
 - DB 연결 테스트 가능
 - 로그 페이지 필터 조회 가능
+- `personal-market-api` 가 운영 화면에 `healthy` 로 보이는지 확인
 
 ## 11. 업데이트 배포 절차
 
@@ -296,6 +397,7 @@ git pull origin main
 
 source /srv/my-api/.venv/bin/activate
 pip install -r /srv/my-api/backend/requirements.txt
+pip install -r /srv/my-api/services/market_api/requirements.txt
 
 cd /srv/my-api/frontend
 npm ci
@@ -306,6 +408,7 @@ npm run build
 
 sudo systemctl restart personal-api-admin-backend
 sudo systemctl restart personal-api-admin-frontend
+sudo systemctl restart personal-market-api
 sudo systemctl reload nginx
 ```
 
@@ -317,7 +420,9 @@ sudo systemctl reload nginx
 - `COOKIE_SECURE=true` 인데 HTTPS 없이 직접 접속하면 로그인 쿠키가 정상 동작하지 않는다.
 - `CORS_ORIGINS` 값이 JSON 배열 형식이 아니면 백엔드가 시작하지 않는다.
 - `backend.env` 와 `frontend.env` 권한이 너무 넓으면 운영 보안상 좋지 않다.
+- `market-api.env` 권한이 너무 넓으면 운영 보안상 좋지 않다.
 - SQLite 파일 경로의 상위 디렉터리가 없거나 권한이 없으면 백엔드 초기화가 실패한다.
+- `market_api` 는 내부 서비스이므로 Nginx에 공개 라우팅을 추가하지 않는다.
 
 ## 13. SQLite 백업 cron
 
