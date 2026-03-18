@@ -1,6 +1,7 @@
+import hmac
 from typing import Annotated
 
-from fastapi import Cookie, Depends, HTTPException, status
+from fastapi import Cookie, Depends, Header, HTTPException, status
 from sqlalchemy.orm import Session
 
 from . import crud
@@ -32,3 +33,9 @@ def get_current_admin(
 
 
 CurrentAdmin = Annotated[Admin, Depends(get_current_admin)]
+
+
+def require_job_secret(job_secret: Annotated[str | None, Header(alias="X-Job-Secret")] = None) -> str:
+    if not job_secret or not hmac.compare_digest(job_secret, settings.job_shared_secret):
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid job secret")
+    return job_secret

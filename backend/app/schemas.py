@@ -318,3 +318,19 @@ class OpsDashboardResponse(BaseModel):
     pm2_processes: list[OpsProcessStatusResponse]
     summary: OpsDashboardSummaryResponse
     warnings: list[str]
+
+
+class OpsCheckIssueResponse(BaseModel):
+    source_type: Literal["systemd", "pm2", "host", "collector"]
+    source_name: str
+    severity: Literal["warning", "critical"]
+    message: str
+
+
+class OpsCheckResponse(BaseModel):
+    generated_at: datetime
+    overall_status: Literal["healthy", "warning", "critical"]
+    previous_overall_status: Literal["healthy", "warning", "critical"] | None
+    changed: bool
+    summary: str
+    issues: list[OpsCheckIssueResponse]

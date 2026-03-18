@@ -23,6 +23,7 @@ class Settings(BaseSettings):
 
     secret_key: str = Field(..., min_length=32)
     encryption_key: str = Field(..., min_length=44)
+    job_shared_secret: str = Field("development-job-shared-secret", min_length=16)
     access_token_expire_minutes: int = 60 * 12
     admin_cookie_name: str = "admin_session"
     cookie_secure: bool = False

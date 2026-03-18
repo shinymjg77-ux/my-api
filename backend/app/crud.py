@@ -231,6 +231,37 @@ def build_log_response(item: models.ActivityLog) -> schemas.ActivityLogResponse:
     )
 
 
+def get_ops_check_state(db: Session, check_name: str = "default") -> models.OpsCheckState | None:
+    return db.scalar(select(models.OpsCheckState).where(models.OpsCheckState.check_name == check_name))
+
+
+def upsert_ops_check_state(
+    db: Session,
+    *,
+    check_name: str,
+    overall_status: str,
+    fingerprint: str,
+    checked_at: datetime,
+) -> models.OpsCheckState:
+    item = get_ops_check_state(db, check_name)
+    if item is None:
+        item = models.OpsCheckState(
+            check_name=check_name,
+            overall_status=overall_status,
+            fingerprint=fingerprint,
+            last_checked_at=checked_at,
+        )
+    else:
+        item.overall_status = overall_status
+        item.fingerprint = fingerprint
+        item.last_checked_at = checked_at
+
+    db.add(item)
+    db.commit()
+    db.refresh(item)
+    return item
+
+
 def list_activity_logs(
     db: Session,
     *,

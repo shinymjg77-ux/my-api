@@ -1,7 +1,7 @@
 from datetime import datetime, timezone
 from typing import Any
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, Index, Integer, String, Text
+from sqlalchemy import Boolean, DateTime, ForeignKey, Index, Integer, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from .database import Base
@@ -111,3 +111,21 @@ class ActivityLog(Base):
             "detail": self.detail,
             "created_at": self.created_at,
         }
+
+
+class OpsCheckState(Base):
+    __tablename__ = "ops_check_states"
+    __table_args__ = (UniqueConstraint("check_name", name="uq_ops_check_states_check_name"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    check_name: Mapped[str] = mapped_column(String(50), nullable=False, index=True)
+    overall_status: Mapped[str] = mapped_column(String(20), nullable=False)
+    fingerprint: Mapped[str] = mapped_column(String(128), nullable=False)
+    last_checked_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=utcnow,
+        onupdate=utcnow,
+        nullable=False,
+    )

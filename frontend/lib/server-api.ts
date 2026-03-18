@@ -65,6 +65,7 @@ export async function proxyToBackend(request: Request, path: string) {
   const headers = new Headers();
   const cookieHeader = request.headers.get("cookie");
   const contentType = request.headers.get("content-type");
+  const jobSecret = request.headers.get("x-job-secret");
 
   headers.set("accept", "application/json");
   if (cookieHeader) {
@@ -72,6 +73,9 @@ export async function proxyToBackend(request: Request, path: string) {
   }
   if (contentType) {
     headers.set("content-type", contentType);
+  }
+  if (jobSecret) {
+    headers.set("x-job-secret", jobSecret);
   }
 
   const response = await fetch(targetUrl, {

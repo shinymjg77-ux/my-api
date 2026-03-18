@@ -56,6 +56,14 @@ def get_default_managed_apis() -> list[schemas.ManagedAPICreate]:
             is_active=True,
         ),
         schemas.ManagedAPICreate(
+            name="Ops Check Job",
+            group_path="platform/admin/jobs",
+            url=_build_managed_api_url(admin_base, f"{settings.api_prefix}/jobs/ops-check"),
+            method="GET",
+            description="운영 이상 징후 체크 잡",
+            is_active=True,
+        ),
+        schemas.ManagedAPICreate(
             name="Market API Health",
             group_path="market/health",
             url=_build_managed_api_url(market_base, "/healthz"),

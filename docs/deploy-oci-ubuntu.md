@@ -78,6 +78,7 @@ API_PREFIX=/api/v1
 
 SECRET_KEY=replace-with-a-long-random-string-at-least-32-chars
 ENCRYPTION_KEY=replace-with-a-valid-fernet-key
+JOB_SHARED_SECRET=replace-with-a-long-random-job-secret
 ACCESS_TOKEN_EXPIRE_MINUTES=720
 ADMIN_COOKIE_NAME=admin_session
 COOKIE_SECURE=true
@@ -92,11 +93,16 @@ BOOTSTRAP_ADMIN_PASSWORD=change-this-now
 DASHBOARD_WINDOW_DAYS=7
 LOG_PAGE_SIZE_DEFAULT=20
 LOG_PAGE_SIZE_MAX=100
-MANAGED_API_ADMIN_BASE_URL=http://127.0.0.1:8000
+MANAGED_API_ADMIN_BASE_URL=https://admin.example.com
 MANAGED_API_MARKET_BASE_URL=http://127.0.0.1:8100
 ```
 
 `MANAGED_API_ADMIN_BASE_URL` 와 `MANAGED_API_MARKET_BASE_URL` 는 관리자 콘솔이 시작될 때 `managed_apis` 기본 항목을 자동 등록할 때 사용한다. 운영 환경에서 내부 호출 주소가 바뀌면 이 값을 같이 맞춰야 한다.
+
+`JOB_SHARED_SECRET` 는 관리자 백엔드의 잡 API와 `market_api`가 공통으로 사용하는 내부 호출용 시크릿이다. 현재 운영에서는 n8n이 아래 두 경로에서 이 값을 헤더 `X-Job-Secret` 으로 보낸다.
+
+- `https://admin.example.com/api/proxy/jobs/ops-check`
+- `https://admin.example.com/internal/market-api/...`
 
 `SECRET_KEY` 생성 예시:
 
@@ -167,14 +173,7 @@ MARKET_BRIEFING_SYMBOLS=^GSPC,^IXIC
 
 `market_api`를 서버 셸에서만 호출하면 `MARKET_API_BIND_HOST=127.0.0.1`로 충분하다.
 
-`n8n`이 Docker 컨테이너로 실행 중이면, 컨테이너가 호스트 loopback에 접근할 수 없으므로 `MARKET_API_BIND_HOST`를 서버 private IP로 바꿔야 한다. 예:
-
-```env
-MARKET_API_BIND_HOST=10.0.0.68
-MARKET_API_PORT=8100
-```
-
-서버 네트워크 정책 때문에 Docker 컨테이너가 호스트 private IP에도 직접 접근하지 못하는 경우가 있다. 이 경우에는 `market_api`를 계속 `127.0.0.1`에 두고, Nginx에 내부 프록시 경로를 추가한 뒤 `n8n`은 HTTPS 경로를 호출하면 된다.
+`n8n`이 Docker 컨테이너로 실행 중이면, 컨테이너에서 호스트의 `127.0.0.1` 에 직접 접근할 수 없다. 현재 운영 방식은 `market_api` 를 계속 `127.0.0.1` 에 두고, Nginx 내부 프록시 경로를 통해 `n8n`이 HTTPS 주소를 호출하는 방식이다.
 
 예시:
 
@@ -229,6 +228,7 @@ curl http://127.0.0.1:8000/healthz
 
 - `platform/admin`
 - `platform/admin/dashboard`
+- `platform/admin/jobs`
 - `market/health`
 - `market/briefings`
 - `market/signals`
@@ -299,6 +299,15 @@ RSI 확인:
 ```bash
 curl -X POST -H "X-Job-Secret: <JOB_SHARED_SECRET>" "http://${MARKET_API_BIND_HOST:-127.0.0.1}:${MARKET_API_PORT:-8100}/api/v1/jobs/rsi-check"
 ```
+
+운영 이상 감지 잡 확인:
+
+```bash
+curl -H "X-Job-Secret: <JOB_SHARED_SECRET>" "http://127.0.0.1:8000/api/v1/jobs/ops-check"
+curl -H "X-Job-Secret: <JOB_SHARED_SECRET>" "https://admin.example.com/api/proxy/jobs/ops-check"
+```
+
+현재 운영에서는 `n8n`이 관리자 프론트의 `/api/proxy/jobs/ops-check` 를 호출하고, Next.js 프록시가 `X-Job-Secret` 헤더를 백엔드로 그대로 전달한다.
 
 ## 7. systemd 등록
 
@@ -401,6 +410,12 @@ curl https://admin.example.com/healthz
 - DB 연결 테스트 가능
 - 로그 페이지 필터 조회 가능
 - `personal-market-api` 가 운영 화면에 `healthy` 로 보이는지 확인
+- `/apis` 에 `platform/admin/jobs -> Ops Check Job` 이 보이는지 확인
+
+`n8n` 운영 확인 항목:
+
+- `My workflow`: 미국 증시 브리핑 + QLD RSI 발송
+- `Ops alert`: 10분 주기 운영 이상 감지 알림
 
 ## 11. 업데이트 배포 절차
 

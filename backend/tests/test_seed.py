@@ -27,13 +27,13 @@ class SeedTests(unittest.TestCase):
                     bootstrap_managed_apis(db)
                     first_pass = db.scalars(select(models.ManagedAPI).order_by(models.ManagedAPI.name)).all()
 
-                    self.assertEqual(len(first_pass), 8)
+                    self.assertEqual(len(first_pass), 9)
                     self.assertEqual(first_pass[0].group_path, "platform/admin")
 
                     bootstrap_managed_apis(db)
                     second_pass = db.scalars(select(models.ManagedAPI).order_by(models.ManagedAPI.name)).all()
 
-                    self.assertEqual(len(second_pass), 8)
+                    self.assertEqual(len(second_pass), 9)
 
 
 if __name__ == "__main__":
