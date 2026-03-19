@@ -26,6 +26,7 @@ FRONTEND_ACTIVE_SLOT_STATE_PATH="${FRONTEND_ACTIVE_SLOT_STATE_PATH:-$APP_ROOT/st
 FRONTEND_SLOT_ROOT="${FRONTEND_SLOT_ROOT:-$APP_ROOT/slots}"
 FRONTEND_SLOT_ENV_DIR="${FRONTEND_SLOT_ENV_DIR:-/etc/my-api/frontend-slots}"
 FRONTEND_SLOTS="${FRONTEND_SLOTS:-blue,green}"
+SYSTEMD_UNIT_DIR="${SYSTEMD_UNIT_DIR:-/etc/systemd/system}"
 
 if [[ -r "$OPS_ENV" ]]; then
   set -a
@@ -63,6 +64,9 @@ TARGET_FRONTEND_PORT=""
 PREVIOUS_FRONTEND_PORT=""
 PREVIOUS_FRONTEND_SLOT=""
 FRONTEND_SWITCH_APPLIED=false
+SYSTEMD_UNITS_SYNCED=false
+DRIFT_TIMER_WAS_ACTIVE=false
+DRIFT_TIMER_WAS_ENABLED=false
 
 timestamp() {
   date -u +%Y-%m-%dT%H:%M:%SZ
@@ -70,6 +74,16 @@ timestamp() {
 
 log() {
   echo "[$(timestamp)] $*"
+}
+
+record_drift_timer_state() {
+  if sudo systemctl is-active --quiet my-api-drift-check.timer; then
+    DRIFT_TIMER_WAS_ACTIVE=true
+  fi
+
+  if sudo systemctl is-enabled --quiet my-api-drift-check.timer; then
+    DRIFT_TIMER_WAS_ENABLED=true
+  fi
 }
 
 validate_mode() {
@@ -404,6 +418,46 @@ PY
   fi
 }
 
+sync_managed_systemd_units() {
+  local units=(
+    "my-api-alert@.service"
+    "my-api-drift-check.service"
+    "my-api-drift-check.timer"
+    "personal-api-admin-backend.service"
+    "personal-api-admin-backend@.service"
+    "personal-api-admin-frontend.service"
+    "personal-api-admin-frontend@.service"
+    "personal-market-api.service"
+  )
+  local unit
+  local source_path
+
+  record_drift_timer_state
+
+  for unit in "${units[@]}"; do
+    source_path="$RELEASE_DIR/deploy/systemd/$unit"
+    if [[ ! -f "$source_path" ]]; then
+      echo "missing managed systemd unit in release: $source_path" >&2
+      exit 1
+    fi
+    sudo install -m 644 "$source_path" "$SYSTEMD_UNIT_DIR/$unit"
+  done
+
+  sudo systemctl daemon-reload
+  SYSTEMD_UNITS_SYNCED=true
+}
+
+restart_managed_timers_if_needed() {
+  if [[ "$SYSTEMD_UNITS_SYNCED" != "true" ]]; then
+    return 0
+  fi
+
+  if [[ "$DRIFT_TIMER_WAS_ACTIVE" == "true" || "$DRIFT_TIMER_WAS_ENABLED" == "true" ]]; then
+    sudo systemctl restart my-api-drift-check.timer
+    log "step:ok restart drift timer"
+  fi
+}
+
 alert_failure() {
   local current_after
   local body
@@ -732,6 +786,12 @@ RELEASE_BUILT_AT="$(read_release_meta_field built_at)"
 CURRENT_BACKEND_SLOT="$(active_backend_slot)"
 TARGET_BACKEND_SLOT="$(inactive_backend_slot "$CURRENT_BACKEND_SLOT")"
 
+LAST_FAILED_STEP="sync managed systemd units"
+sync_managed_systemd_units
+LAST_COMPLETED_STEP="sync managed systemd units"
+LAST_FAILED_STEP=""
+log "step:ok sync managed systemd units"
+
 ensure_backend_slot_env blue
 ensure_backend_slot_env green
 TARGET_BACKEND_PORT="$(slot_port_for "$TARGET_BACKEND_SLOT")"
@@ -863,6 +923,11 @@ else
   LAST_COMPLETED_STEP="switch current symlink"
   log "step:ok switch current symlink"
 fi
+
+LAST_FAILED_STEP="restart managed timers"
+restart_managed_timers_if_needed
+LAST_COMPLETED_STEP="restart managed timers"
+LAST_FAILED_STEP=""
 
 cleanup_old_releases
 

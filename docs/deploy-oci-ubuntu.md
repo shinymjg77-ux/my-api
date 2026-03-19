@@ -704,6 +704,8 @@ sudo systemctl daemon-reload
 - 백엔드는 `blue`, `green` 슬롯 중 유휴 슬롯에 먼저 기동
 - 슬롯 직접 헬스체크와 `/version` 검증 후 Nginx upstream 전환
 - `full` 모드에서만 `current` 전환 뒤 `frontend`, `market_api` 를 순차 재시작
+- release activation 단계에서 managed systemd unit 파일도 `/etc/systemd/system` 으로 자동 동기화
+- active 또는 enabled 상태였던 `my-api-drift-check.timer` 는 release activation 마지막에 자동 재시작
 - 오래된 릴리스는 최근 5개만 유지하되, `current` 와 슬롯이 가리키는 release 는 보존
 
 실행 예시:
