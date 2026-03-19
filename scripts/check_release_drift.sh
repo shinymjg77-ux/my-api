@@ -4,6 +4,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 SERVER_REPO_DIR="${RELEASE_REPO_DIR:-/srv/my-api/repo}"
+SERVER_APP_ROOT="${APP_ROOT:-/srv/my-api}"
 ALERT_ON_DRIFT=false
 TARGET_HOST=""
 
@@ -44,7 +45,7 @@ git -C "$REPO_ROOT" fetch origin main --quiet
 LOCAL_HEAD="$(git -C "$REPO_ROOT" rev-parse HEAD)"
 ORIGIN_MAIN="$(git -C "$REPO_ROOT" rev-parse origin/main)"
 
-REMOTE_STATE="$(ssh "$TARGET_HOST" "cd '$SERVER_REPO_DIR' && bash scripts/check_server_drift.sh --json")"
+REMOTE_STATE="$(ssh "$TARGET_HOST" "APP_ROOT='$SERVER_APP_ROOT' bash '$SERVER_APP_ROOT/current/scripts/check_server_drift.sh' --json")"
 
 DRIFT_REPORT="$(
   python3 - <<'PY' "$LOCAL_HEAD" "$ORIGIN_MAIN" "$REMOTE_STATE"
