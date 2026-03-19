@@ -733,6 +733,7 @@ chmod +x scripts/deploy_from_server.sh scripts/server_prepare_release.sh scripts
 설치 파일:
 
 - [scripts/check_server_drift.sh](../scripts/check_server_drift.sh)
+- [scripts/self_heal_market_api_proxy.sh](../scripts/self_heal_market_api_proxy.sh)
 - [deploy/systemd/my-api-drift-check.service](../deploy/systemd/my-api-drift-check.service)
 - [deploy/systemd/my-api-drift-check.timer](../deploy/systemd/my-api-drift-check.timer)
 
@@ -745,9 +746,20 @@ sudo systemctl daemon-reload
 sudo systemctl enable --now my-api-drift-check.timer
 ```
 
+타이머는 10분마다 실행되며, 드리프트 점검 전에 `self_heal_market_api_proxy.sh` 를 먼저 호출한다.
+이 스크립트는 아래 조건이 모두 맞을 때만 제한적으로 자동 복구를 시도한다.
+
+- `market_api` 로컬 헬스체크는 정상
+- 공개 `/internal/market-api/healthz` 경로는 비정상
+- 활성 Nginx site 파일에 `/internal/market-api/` 프록시 블록이 없음
+
+이 경우에만 프록시 블록을 삽입하고 `nginx -t` 후 reload 한다.
+이미 블록이 있는데도 공개 경로가 비정상이면 자동 수정은 하지 않고 로그만 남긴다.
+
 수동 점검:
 
 ```bash
+/srv/my-api/current/scripts/self_heal_market_api_proxy.sh
 /srv/my-api/current/scripts/check_server_drift.sh
 ./scripts/check_release_drift.sh your-ssh-host-alias
 ```

@@ -7,4 +7,5 @@ Wants=network-online.target
 Type=oneshot
 User=ubuntu
 Group=ubuntu
+ExecStartPre=-/bin/bash -lc '/srv/my-api/current/scripts/self_heal_market_api_proxy.sh'
 ExecStart=/bin/bash -lc '/srv/my-api/current/scripts/check_server_drift.sh --alert-on-drift'
