@@ -62,6 +62,7 @@ def version() -> dict[str, str | bool | None]:
         "release_id": None,
         "built_at": None,
         "backend_slot": None,
+        "frontend_slot": None,
         "missing_release_meta": False,
         "release_meta_error": None,
     }

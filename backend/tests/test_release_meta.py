@@ -21,6 +21,7 @@ class ReleaseMetaTests(unittest.TestCase):
                         "release_id": "20260319T010203Z",
                         "built_at": "2026-03-19T01:02:03Z",
                         "backend_slot": "green",
+                        "frontend_slot": "blue",
                     }
                 ),
                 encoding="utf-8",
@@ -36,6 +37,7 @@ class ReleaseMetaTests(unittest.TestCase):
                 "release_id": "20260319T010203Z",
                 "built_at": "2026-03-19T01:02:03Z",
                 "backend_slot": "green",
+                "frontend_slot": "blue",
             },
         )
 
@@ -60,6 +62,7 @@ class ReleaseMetaTests(unittest.TestCase):
                     "release_id": "20260319T010203Z",
                     "built_at": "2026-03-19T01:02:03Z",
                     "backend_slot": "green",
+                    "frontend_slot": "blue",
                 },
                 None,
             ),
@@ -70,6 +73,7 @@ class ReleaseMetaTests(unittest.TestCase):
         self.assertEqual(response.json()["status"], "ok")
         self.assertEqual(response.json()["git_sha"], "abc123")
         self.assertEqual(response.json()["backend_slot"], "green")
+        self.assertEqual(response.json()["frontend_slot"], "blue")
         self.assertFalse(response.json()["missing_release_meta"])
 
     def test_version_endpoint_returns_degraded_payload_when_metadata_is_missing(self) -> None:

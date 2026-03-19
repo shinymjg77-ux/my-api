@@ -20,6 +20,12 @@ BACKEND_ACTIVE_SLOT_STATE_PATH="${BACKEND_ACTIVE_SLOT_STATE_PATH:-$APP_ROOT/stat
 BACKEND_SLOT_ROOT="${BACKEND_SLOT_ROOT:-$APP_ROOT/slots}"
 BACKEND_SLOT_ENV_DIR="${BACKEND_SLOT_ENV_DIR:-/etc/my-api/backend-slots}"
 BACKEND_SLOTS="${BACKEND_SLOTS:-blue,green}"
+FRONTEND_STABLE_BASE_URL="${FRONTEND_STABLE_BASE_URL:-http://127.0.0.1:3100}"
+FRONTEND_UPSTREAM_CONF="${FRONTEND_UPSTREAM_CONF:-/etc/nginx/snippets/my-api-frontend-upstream.conf}"
+FRONTEND_ACTIVE_SLOT_STATE_PATH="${FRONTEND_ACTIVE_SLOT_STATE_PATH:-$APP_ROOT/state/frontend-active-slot}"
+FRONTEND_SLOT_ROOT="${FRONTEND_SLOT_ROOT:-$APP_ROOT/slots}"
+FRONTEND_SLOT_ENV_DIR="${FRONTEND_SLOT_ENV_DIR:-/etc/my-api/frontend-slots}"
+FRONTEND_SLOTS="${FRONTEND_SLOTS:-blue,green}"
 
 if [[ -r "$OPS_ENV" ]]; then
   set -a
@@ -31,6 +37,12 @@ if [[ -r "$OPS_ENV" ]]; then
   BACKEND_SLOT_ROOT="${BACKEND_SLOT_ROOT:-$APP_ROOT/slots}"
   BACKEND_SLOT_ENV_DIR="${BACKEND_SLOT_ENV_DIR:-/etc/my-api/backend-slots}"
   BACKEND_SLOTS="${BACKEND_SLOTS:-blue,green}"
+  FRONTEND_STABLE_BASE_URL="${FRONTEND_STABLE_BASE_URL:-http://127.0.0.1:3100}"
+  FRONTEND_UPSTREAM_CONF="${FRONTEND_UPSTREAM_CONF:-/etc/nginx/snippets/my-api-frontend-upstream.conf}"
+  FRONTEND_ACTIVE_SLOT_STATE_PATH="${FRONTEND_ACTIVE_SLOT_STATE_PATH:-$APP_ROOT/state/frontend-active-slot}"
+  FRONTEND_SLOT_ROOT="${FRONTEND_SLOT_ROOT:-$APP_ROOT/slots}"
+  FRONTEND_SLOT_ENV_DIR="${FRONTEND_SLOT_ENV_DIR:-/etc/my-api/frontend-slots}"
+  FRONTEND_SLOTS="${FRONTEND_SLOTS:-blue,green}"
 fi
 
 CURRENT_BEFORE="$(readlink -f "$CURRENT_LINK" 2>/dev/null || true)"
@@ -45,6 +57,12 @@ TARGET_BACKEND_SLOT=""
 TARGET_BACKEND_PORT=""
 PREVIOUS_BACKEND_PORT=""
 BACKEND_SWITCH_APPLIED=false
+CURRENT_FRONTEND_SLOT=""
+TARGET_FRONTEND_SLOT=""
+TARGET_FRONTEND_PORT=""
+PREVIOUS_FRONTEND_PORT=""
+PREVIOUS_FRONTEND_SLOT=""
+FRONTEND_SWITCH_APPLIED=false
 
 timestamp() {
   date -u +%Y-%m-%dT%H:%M:%SZ
@@ -74,9 +92,19 @@ slot_link_path() {
   printf '%s/backend-%s' "$BACKEND_SLOT_ROOT" "$slot"
 }
 
+frontend_slot_link_path() {
+  local slot="$1"
+  printf '%s/frontend-%s' "$FRONTEND_SLOT_ROOT" "$slot"
+}
+
 slot_env_path() {
   local slot="$1"
   printf '%s/%s.env' "$BACKEND_SLOT_ENV_DIR" "$slot"
+}
+
+frontend_slot_env_path() {
+  local slot="$1"
+  printf '%s/%s.env' "$FRONTEND_SLOT_ENV_DIR" "$slot"
 }
 
 slot_default_port() {
@@ -94,10 +122,38 @@ slot_default_port() {
   esac
 }
 
+frontend_slot_default_port() {
+  case "$1" in
+    blue)
+      echo "3001"
+      ;;
+    green)
+      echo "3002"
+      ;;
+    *)
+      echo "unsupported frontend slot: $1" >&2
+      exit 1
+      ;;
+  esac
+}
+
 active_backend_slot() {
   if [[ -r "$BACKEND_ACTIVE_SLOT_STATE_PATH" ]]; then
     local slot
     slot="$(tr -d '[:space:]' <"$BACKEND_ACTIVE_SLOT_STATE_PATH")"
+    if [[ "$slot" == "blue" || "$slot" == "green" ]]; then
+      echo "$slot"
+      return 0
+    fi
+  fi
+
+  echo "blue"
+}
+
+active_frontend_slot() {
+  if [[ -r "$FRONTEND_ACTIVE_SLOT_STATE_PATH" ]]; then
+    local slot
+    slot="$(tr -d '[:space:]' <"$FRONTEND_ACTIVE_SLOT_STATE_PATH")"
     if [[ "$slot" == "blue" || "$slot" == "green" ]]; then
       echo "$slot"
       return 0
@@ -122,6 +178,21 @@ inactive_backend_slot() {
   esac
 }
 
+inactive_frontend_slot() {
+  case "$1" in
+    blue)
+      echo "green"
+      ;;
+    green)
+      echo "blue"
+      ;;
+    *)
+      echo "unsupported frontend slot: $1" >&2
+      exit 1
+      ;;
+  esac
+}
+
 ensure_backend_slot_env() {
   local slot="$1"
   local path
@@ -138,6 +209,26 @@ ensure_backend_slot_env() {
 
   temp_file="$(mktemp)"
   printf 'BACKEND_SLOT_PORT=%s\n' "$port" >"$temp_file"
+  sudo install -m 644 "$temp_file" "$path"
+  rm -f "$temp_file"
+}
+
+ensure_frontend_slot_env() {
+  local slot="$1"
+  local path
+  local port
+  local temp_file
+
+  path="$(frontend_slot_env_path "$slot")"
+  port="$(frontend_slot_default_port "$slot")"
+
+  sudo install -d -m 755 "$FRONTEND_SLOT_ENV_DIR"
+  if sudo test -f "$path"; then
+    return 0
+  fi
+
+  temp_file="$(mktemp)"
+  printf 'FRONTEND_SLOT_PORT=%s\n' "$port" >"$temp_file"
   sudo install -m 644 "$temp_file" "$path"
   rm -f "$temp_file"
 }
@@ -169,6 +260,33 @@ raise SystemExit("missing BACKEND_SLOT_PORT")
 PY
 }
 
+frontend_slot_port_for() {
+  local slot="$1"
+  local path
+
+  path="$(frontend_slot_env_path "$slot")"
+  if [[ -r "$path" ]]; then
+    grep '^FRONTEND_SLOT_PORT=' "$path" | tail -n 1 | cut -d= -f2-
+    return 0
+  fi
+
+  sudo python3 - <<'PY' "$path"
+import pathlib
+import sys
+
+path = pathlib.Path(sys.argv[1])
+for raw_line in path.read_text(encoding="utf-8").splitlines():
+    line = raw_line.strip()
+    if not line or line.startswith("#") or "=" not in line:
+        continue
+    key, value = line.split("=", 1)
+    if key == "FRONTEND_SLOT_PORT" and value.strip():
+        print(value.strip())
+        raise SystemExit(0)
+raise SystemExit("missing FRONTEND_SLOT_PORT")
+PY
+}
+
 ensure_slot_link() {
   local slot="$1"
   local target_dir="$2"
@@ -177,11 +295,46 @@ ensure_slot_link() {
   ln -sfn "$target_dir" "$(slot_link_path "$slot")"
 }
 
+ensure_frontend_slot_link() {
+  local slot="$1"
+  local target_dir="$2"
+
+  mkdir -p "$FRONTEND_SLOT_ROOT"
+  ln -sfn "$target_dir" "$(frontend_slot_link_path "$slot")"
+}
+
 record_active_backend_slot() {
   local slot="$1"
 
   mkdir -p "$(dirname "$BACKEND_ACTIVE_SLOT_STATE_PATH")"
   printf '%s\n' "$slot" >"$BACKEND_ACTIVE_SLOT_STATE_PATH"
+}
+
+record_active_frontend_slot() {
+  local slot="$1"
+
+  mkdir -p "$(dirname "$FRONTEND_ACTIVE_SLOT_STATE_PATH")"
+  printf '%s\n' "$slot" >"$FRONTEND_ACTIVE_SLOT_STATE_PATH"
+}
+
+clear_active_frontend_slot() {
+  rm -f "$FRONTEND_ACTIVE_SLOT_STATE_PATH"
+}
+
+current_upstream_port() {
+  local path="$1"
+  local fallback="$2"
+  local port=""
+
+  if [[ -r "$path" ]]; then
+    port="$(grep -Eo 'http://127\.0\.0\.1:[0-9]+' "$path" | head -n 1 | cut -d: -f3 || true)"
+    if [[ -n "$port" ]]; then
+      printf '%s\n' "$port"
+      return 0
+    fi
+  fi
+
+  printf '%s\n' "$fallback"
 }
 
 release_meta_json_set() {
@@ -270,6 +423,8 @@ current_before=${CURRENT_BEFORE:-unknown}
 current_after=${current_after:-unknown}
 current_backend_slot=${CURRENT_BACKEND_SLOT:-unknown}
 target_backend_slot=${TARGET_BACKEND_SLOT:-unknown}
+current_frontend_slot=${CURRENT_FRONTEND_SLOT:-unknown}
+target_frontend_slot=${TARGET_FRONTEND_SLOT:-unknown}
 last_completed_step=$LAST_COMPLETED_STEP
 failed_step=${LAST_FAILED_STEP:-unknown}
 alert_kind=$ALERT_KIND
@@ -291,7 +446,25 @@ rollback_backend_switch() {
   log "step:rollback backend switch slot=$CURRENT_BACKEND_SLOT port=$PREVIOUS_BACKEND_PORT"
 }
 
+rollback_frontend_switch() {
+  if [[ "$FRONTEND_SWITCH_APPLIED" != "true" || -z "$PREVIOUS_FRONTEND_PORT" ]]; then
+    return 0
+  fi
+
+  write_frontend_upstream_conf "${PREVIOUS_FRONTEND_SLOT:-legacy}" "$PREVIOUS_FRONTEND_PORT"
+  sudo nginx -t
+  sudo systemctl reload nginx
+  if [[ -n "$PREVIOUS_FRONTEND_SLOT" ]]; then
+    record_active_frontend_slot "$PREVIOUS_FRONTEND_SLOT"
+  else
+    clear_active_frontend_slot
+  fi
+  FRONTEND_SWITCH_APPLIED=false
+  log "step:rollback frontend switch slot=${PREVIOUS_FRONTEND_SLOT:-legacy} port=$PREVIOUS_FRONTEND_PORT"
+}
+
 handle_failure() {
+  rollback_frontend_switch || true
   rollback_backend_switch || true
   alert_failure || true
 }
@@ -357,8 +530,40 @@ if payload.get("backend_slot") != expected_backend_slot:
 PY
 }
 
-check_frontend_login() {
-  curl -fsS -I http://127.0.0.1:3000/login >/dev/null
+check_frontend_login_url() {
+  local base_url
+  base_url="$(normalize_base_url "$1")"
+  curl -fsS -I "${base_url}/login" >/dev/null
+}
+
+check_frontend_runtime_version_url() {
+  local base_url
+  local response
+
+  base_url="$(normalize_base_url "$1")"
+  response="$(curl -fsS "${base_url}/api/runtime/version")" || return 1
+
+  python3 - <<'PY' "$response" "$RELEASE_GIT_SHA" "$RELEASE_ID" "$RELEASE_BUILT_AT" "$TARGET_FRONTEND_SLOT"
+import json
+import sys
+
+payload = json.loads(sys.argv[1])
+expected_git_sha = sys.argv[2]
+expected_release_id = sys.argv[3]
+expected_built_at = sys.argv[4]
+expected_frontend_slot = sys.argv[5]
+
+if payload.get("status") != "ok":
+    raise SystemExit("frontend runtime version endpoint is not healthy")
+if payload.get("git_sha") != expected_git_sha:
+    raise SystemExit("frontend git_sha does not match release metadata")
+if payload.get("release_id") != expected_release_id:
+    raise SystemExit("frontend release_id does not match release metadata")
+if payload.get("built_at") != expected_built_at:
+    raise SystemExit("frontend built_at does not match release metadata")
+if payload.get("frontend_slot") != expected_frontend_slot:
+    raise SystemExit("frontend slot does not match release metadata")
+PY
 }
 
 check_market_api_healthz() {
@@ -378,6 +583,19 @@ write_backend_upstream_conf() {
   log "step:ok write backend upstream slot=$slot port=$port"
 }
 
+write_frontend_upstream_conf() {
+  local slot="$1"
+  local port="$2"
+  local temp_file
+
+  temp_file="$(mktemp)"
+  printf 'set $my_api_frontend http://127.0.0.1:%s;\n' "$port" >"$temp_file"
+  sudo install -d -m 755 "$(dirname "$FRONTEND_UPSTREAM_CONF")"
+  sudo install -m 644 "$temp_file" "$FRONTEND_UPSTREAM_CONF"
+  rm -f "$temp_file"
+  log "step:ok write frontend upstream slot=$slot port=$port"
+}
+
 ensure_slot_runtime() {
   local slot="$1"
   local slot_target="$2"
@@ -388,6 +606,18 @@ ensure_slot_runtime() {
   slot_port="$(slot_port_for "$slot")"
   sudo systemctl restart "personal-api-admin-backend@${slot}"
   verify_with_retry "backend slot ${slot} healthz" 30 1 check_backend_healthz_url "http://127.0.0.1:${slot_port}"
+}
+
+ensure_frontend_slot_runtime() {
+  local slot="$1"
+  local slot_target="$2"
+  local slot_port
+
+  ensure_frontend_slot_env "$slot"
+  ensure_frontend_slot_link "$slot" "$slot_target"
+  slot_port="$(frontend_slot_port_for "$slot")"
+  sudo systemctl restart "personal-api-admin-frontend@${slot}"
+  verify_with_retry "frontend slot ${slot} login" 30 1 check_frontend_login_url "http://127.0.0.1:${slot_port}"
 }
 
 run_n8n_verification() {
@@ -445,7 +675,7 @@ cleanup_old_releases() {
   local protected=()
   local candidate
 
-  for candidate in "$CURRENT_LINK" "$(slot_link_path blue)" "$(slot_link_path green)"; do
+  for candidate in "$CURRENT_LINK" "$(slot_link_path blue)" "$(slot_link_path green)" "$(frontend_slot_link_path blue)" "$(frontend_slot_link_path green)"; do
     local resolved
     resolved="$(readlink -f "$candidate" 2>/dev/null || true)"
     if [[ -n "$resolved" ]]; then
@@ -479,8 +709,9 @@ cleanup_old_releases() {
 
 validate_mode
 BACKEND_STABLE_BASE_URL="$(normalize_base_url "$BACKEND_STABLE_BASE_URL")"
+FRONTEND_STABLE_BASE_URL="$(normalize_base_url "$FRONTEND_STABLE_BASE_URL")"
 
-mkdir -p "$LOG_DIR" "$APP_ROOT/releases" "$APP_ROOT/backups/sqlite" "$APP_ROOT/data" "$BACKEND_SLOT_ROOT" "$(dirname "$BACKEND_ACTIVE_SLOT_STATE_PATH")"
+mkdir -p "$LOG_DIR" "$APP_ROOT/releases" "$APP_ROOT/backups/sqlite" "$APP_ROOT/data" "$BACKEND_SLOT_ROOT" "$FRONTEND_SLOT_ROOT" "$(dirname "$BACKEND_ACTIVE_SLOT_STATE_PATH")" "$(dirname "$FRONTEND_ACTIVE_SLOT_STATE_PATH")"
 touch "$LOG_DIR/update.log"
 exec >>"$LOG_DIR/update.log" 2>&1
 
@@ -505,6 +736,20 @@ ensure_backend_slot_env blue
 ensure_backend_slot_env green
 TARGET_BACKEND_PORT="$(slot_port_for "$TARGET_BACKEND_SLOT")"
 PREVIOUS_BACKEND_PORT="$(slot_port_for "$CURRENT_BACKEND_SLOT")"
+
+if [[ "$DEPLOY_MODE" == "full" ]]; then
+  CURRENT_FRONTEND_SLOT="$(active_frontend_slot)"
+  TARGET_FRONTEND_SLOT="$(inactive_frontend_slot "$CURRENT_FRONTEND_SLOT")"
+  ensure_frontend_slot_env blue
+  ensure_frontend_slot_env green
+  TARGET_FRONTEND_PORT="$(frontend_slot_port_for "$TARGET_FRONTEND_SLOT")"
+  PREVIOUS_FRONTEND_PORT="$(current_upstream_port "$FRONTEND_UPSTREAM_CONF" "3000")"
+  if [[ "$PREVIOUS_FRONTEND_PORT" == "$(frontend_slot_port_for blue)" ]]; then
+    PREVIOUS_FRONTEND_SLOT="blue"
+  elif [[ "$PREVIOUS_FRONTEND_PORT" == "$(frontend_slot_port_for green)" ]]; then
+    PREVIOUS_FRONTEND_SLOT="green"
+  fi
+fi
 
 LAST_FAILED_STEP="install backend dependencies"
 cd "$APP_ROOT"
@@ -563,18 +808,47 @@ log "step:ok switch backend upstream"
 verify_with_retry "stable backend healthz" 30 1 check_backend_healthz_url "$BACKEND_STABLE_BASE_URL"
 verify_with_retry "stable backend version" 30 1 check_backend_version_url "$BACKEND_STABLE_BASE_URL"
 
-ln -sfn "$RELEASE_DIR" "$CURRENT_LINK"
-LAST_COMPLETED_STEP="switch current symlink"
-log "step:ok switch current symlink"
-
 if [[ "$DEPLOY_MODE" == "full" ]]; then
-  LAST_FAILED_STEP="restart frontend"
-  sudo systemctl restart personal-api-admin-frontend
-  LAST_COMPLETED_STEP="restart frontend"
-  LAST_FAILED_STEP=""
-  log "step:ok restart frontend"
+  if [[ -n "$CURRENT_BEFORE" ]] && ! sudo systemctl is-active --quiet "personal-api-admin-frontend@${CURRENT_FRONTEND_SLOT}"; then
+    LAST_FAILED_STEP="bootstrap current frontend slot"
+    ensure_frontend_slot_runtime "$CURRENT_FRONTEND_SLOT" "$CURRENT_BEFORE"
+    LAST_COMPLETED_STEP="bootstrap current frontend slot"
+    LAST_FAILED_STEP=""
+    log "step:ok bootstrap current frontend slot"
+  fi
 
-  verify_with_retry "frontend login" 30 1 check_frontend_login
+  LAST_FAILED_STEP="prepare target frontend slot"
+  release_meta_json_set "frontend_slot" "$TARGET_FRONTEND_SLOT"
+  ensure_frontend_slot_link "$TARGET_FRONTEND_SLOT" "$RELEASE_DIR"
+  LAST_COMPLETED_STEP="prepare target frontend slot"
+  LAST_FAILED_STEP=""
+  log "step:ok prepare target frontend slot"
+
+  LAST_FAILED_STEP="restart target frontend slot"
+  sudo systemctl restart "personal-api-admin-frontend@${TARGET_FRONTEND_SLOT}"
+  LAST_COMPLETED_STEP="restart target frontend slot"
+  LAST_FAILED_STEP=""
+  log "step:ok restart target frontend slot"
+
+  verify_with_retry "target frontend login" 30 1 check_frontend_login_url "http://127.0.0.1:${TARGET_FRONTEND_PORT}"
+  verify_with_retry "target frontend version" 30 1 check_frontend_runtime_version_url "http://127.0.0.1:${TARGET_FRONTEND_PORT}"
+
+  LAST_FAILED_STEP="switch frontend upstream"
+  write_frontend_upstream_conf "$TARGET_FRONTEND_SLOT" "$TARGET_FRONTEND_PORT"
+  sudo nginx -t
+  sudo systemctl reload nginx
+  record_active_frontend_slot "$TARGET_FRONTEND_SLOT"
+  FRONTEND_SWITCH_APPLIED=true
+  LAST_COMPLETED_STEP="switch frontend upstream"
+  LAST_FAILED_STEP=""
+  log "step:ok switch frontend upstream"
+
+  verify_with_retry "stable frontend login" 30 1 check_frontend_login_url "$FRONTEND_STABLE_BASE_URL"
+  verify_with_retry "stable frontend version" 30 1 check_frontend_runtime_version_url "$FRONTEND_STABLE_BASE_URL"
+
+  ln -sfn "$RELEASE_DIR" "$CURRENT_LINK"
+  LAST_COMPLETED_STEP="switch current symlink"
+  log "step:ok switch current symlink"
 
   LAST_FAILED_STEP="restart market_api"
   sudo systemctl restart personal-market-api
@@ -584,10 +858,14 @@ if [[ "$DEPLOY_MODE" == "full" ]]; then
 
   verify_with_retry "market_api healthz" 30 1 check_market_api_healthz
   run_n8n_verification
+else
+  ln -sfn "$RELEASE_DIR" "$CURRENT_LINK"
+  LAST_COMPLETED_STEP="switch current symlink"
+  log "step:ok switch current symlink"
 fi
 
 cleanup_old_releases
 
 LAST_COMPLETED_STEP="cleanup old releases"
 log "step:ok cleanup old releases"
-log "release activated: $RELEASE_ID mode=$DEPLOY_MODE backend_slot=$TARGET_BACKEND_SLOT"
+log "release activated: $RELEASE_ID mode=$DEPLOY_MODE backend_slot=$TARGET_BACKEND_SLOT frontend_slot=${TARGET_FRONTEND_SLOT:-unchanged}"

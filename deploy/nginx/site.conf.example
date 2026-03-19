@@ -19,6 +19,26 @@ server {
 }
 
 server {
+    listen 127.0.0.1:3100;
+    server_name frontend.internal;
+
+    include /etc/nginx/snippets/my-api-frontend-upstream.conf;
+
+    proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+    proxy_http_version 1.1;
+
+    location / {
+        proxy_pass $my_api_frontend;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+        proxy_read_timeout 60s;
+    }
+}
+
+server {
     listen 80;
     listen [::]:80;
     server_name admin.example.com;
@@ -69,20 +89,23 @@ server {
 
     location = /api/auth/login {
         limit_req zone=auth burst=3 nodelay;
-        proxy_pass http://127.0.0.1:3000;
+        include /etc/nginx/snippets/my-api-frontend-upstream.conf;
+        proxy_pass $my_api_frontend;
         proxy_set_header Upgrade $http_upgrade;
         proxy_set_header Connection "upgrade";
         proxy_read_timeout 60s;
     }
 
     location /_next/static/ {
-        proxy_pass http://127.0.0.1:3000/_next/static/;
+        include /etc/nginx/snippets/my-api-frontend-upstream.conf;
+        proxy_pass $my_api_frontend;
         expires 30d;
         access_log off;
     }
 
     location / {
-        proxy_pass http://127.0.0.1:3000;
+        include /etc/nginx/snippets/my-api-frontend-upstream.conf;
+        proxy_pass $my_api_frontend;
         proxy_set_header Upgrade $http_upgrade;
         proxy_set_header Connection "upgrade";
         proxy_read_timeout 60s;

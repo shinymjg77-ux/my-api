@@ -1,0 +1,26 @@
+[Unit]
+Description=Personal API Admin Frontend Slot %i
+After=network.target nginx.service
+OnFailure=my-api-alert@%p.service
+
+[Service]
+Type=simple
+User=ubuntu
+Group=ubuntu
+WorkingDirectory=/srv/my-api/slots/frontend-%i/frontend
+EnvironmentFile=/etc/my-api/frontend.env
+EnvironmentFile=/etc/my-api/frontend-slots/%i.env
+ExecStart=/usr/bin/npm run start -- --hostname 127.0.0.1 --port ${FRONTEND_SLOT_PORT}
+Restart=always
+RestartSec=3
+TimeoutStopSec=15
+PrivateTmp=true
+NoNewPrivileges=true
+ProtectSystem=strict
+ReadWritePaths=/srv/my-api/releases /srv/my-api/slots
+MemoryMax=512M
+CPUQuota=80%
+TasksMax=64
+
+[Install]
+WantedBy=multi-user.target

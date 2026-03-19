@@ -66,28 +66,33 @@
 
 상태:
 
-- 2차 구현 완료
+- 3차 구현 완료
 - 백엔드 우선 dual-slot 전환 적용
 - 안정 내부 주소 `127.0.0.1:9000` 추가
 - 활성 슬롯 상태와 Nginx upstream 드리프트 감시 추가
+- 프런트엔드 dual-slot 전환 적용
+- 프런트 안정 내부 주소 `127.0.0.1:3100` 추가
+- 프런트 런타임 버전 API `/api/runtime/version` 추가
 
 현재 상태:
 
 - 백엔드는 `blue`, `green` 슬롯 중 유휴 슬롯에 새 release를 먼저 기동함
 - 검증 통과 후 Nginx upstream 만 새 슬롯으로 전환함
-- 프런트엔드는 아직 단일 `3000` 인스턴스 구조를 유지함
+- 프런트도 `blue`, `green` 슬롯 중 유휴 슬롯에 새 release를 먼저 기동함
+- 검증 통과 후 Nginx frontend upstream 만 새 슬롯으로 전환함
+- `market_api`는 아직 단일 인스턴스 구조를 유지함
 
 개발 방향:
 
-- 프런트엔드도 같은 방식으로 2포트 또는 2서비스 구조 검토
-- 현재 `full` 배포는 백엔드 슬롯 전환 뒤 프런트/market_api를 순차 재시작함
-- 다음 단계는 프런트엔드까지 dual-slot 또는 blue-green으로 확장하는 것
+- 남은 대상은 `market_api` 단일 인스턴스 구조와 SQLite 변경 안전성이다
+- 현재 `full` 배포는 backend/frontend 슬롯 전환 뒤 `market_api` 를 순차 재시작함
+- 다음 단계는 `market_api` 배포 전략 또는 데이터 마이그레이션 가이드 정리다
 
 완료 기준:
 
-- 백엔드 배포 중 `healthz` 가 계속 응답해야 함
+- backend/frontend 배포 중 공개 `login`, `healthz` 가 계속 응답해야 함
 - 실패 시 이전 슬롯으로 즉시 upstream 롤백 가능해야 함
-- `/version`, 활성 슬롯 상태 파일, Nginx upstream 대상이 서로 일치해야 함
+- `/version`, `/api/runtime/version`, 활성 슬롯 상태 파일, Nginx upstream 대상이 서로 일치해야 함
 
 ## 4. 배포 후 자동 검증
 

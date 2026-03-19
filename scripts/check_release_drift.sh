@@ -89,6 +89,12 @@ report = {
     'backend_release_slot': remote_state.get('backend_release_slot'),
     'backend_version_slot': remote_state.get('backend_version_slot'),
     'backend_upstream_target': remote_state.get('backend_upstream_target'),
+    'frontend_stable_base_url': remote_state.get('frontend_stable_base_url'),
+    'frontend_active_slot': remote_state.get('frontend_active_slot'),
+    'frontend_active_slot_port': remote_state.get('frontend_active_slot_port'),
+    'frontend_release_slot': remote_state.get('frontend_release_slot'),
+    'frontend_version_slot': remote_state.get('frontend_version_slot'),
+    'frontend_upstream_target': remote_state.get('frontend_upstream_target'),
     'n8n_compose_path': remote_state.get('n8n_compose_path'),
     'n8n_compose_sha256': remote_state.get('n8n_compose_sha256'),
     'n8n_compose_modified_at': remote_state.get('n8n_compose_modified_at'),
@@ -118,6 +124,12 @@ print(f"backend_active_slot_port: {report['backend_active_slot_port']}")
 print(f"backend_release_slot: {report['backend_release_slot']}")
 print(f"backend_version_slot: {report['backend_version_slot']}")
 print(f"backend_upstream_target: {report['backend_upstream_target']}")
+print(f"frontend_stable_base_url: {report['frontend_stable_base_url']}")
+print(f"frontend_active_slot: {report['frontend_active_slot']}")
+print(f"frontend_active_slot_port: {report['frontend_active_slot_port']}")
+print(f"frontend_release_slot: {report['frontend_release_slot']}")
+print(f"frontend_version_slot: {report['frontend_version_slot']}")
+print(f"frontend_upstream_target: {report['frontend_upstream_target']}")
 print(f"n8n_compose_path: {report['n8n_compose_path']}")
 print(f"n8n_compose_sha256: {report['n8n_compose_sha256']}")
 print(f"n8n_compose_modified_at: {report['n8n_compose_modified_at']}")

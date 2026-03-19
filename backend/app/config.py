@@ -39,12 +39,13 @@ class Settings(BaseSettings):
     dashboard_window_days: int = 7
     log_page_size_default: int = 20
     log_page_size_max: int = 100
-    managed_api_admin_base_url: str = "http://127.0.0.1:8000"
+    managed_api_admin_base_url: str = "http://127.0.0.1:9000"
     managed_api_market_base_url: str = "http://127.0.0.1:8100"
     ops_systemd_units: str = (
         "personal-api-admin-backend@blue.service,"
         "personal-api-admin-backend@green.service,"
-        "personal-api-admin-frontend.service,"
+        "personal-api-admin-frontend@blue.service,"
+        "personal-api-admin-frontend@green.service,"
         "personal-market-api.service,"
         "nginx.service"
     )

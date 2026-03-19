@@ -5,7 +5,7 @@ from pathlib import Path
 RELEASE_META_FILENAME = ".release-meta.json"
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 REQUIRED_FIELDS = ("git_sha", "release_id", "built_at")
-OPTIONAL_FIELDS = ("backend_slot", "n8n_compose_sha256")
+OPTIONAL_FIELDS = ("backend_slot", "frontend_slot", "n8n_compose_sha256")
 
 
 def get_release_meta_path(project_root: Path | None = None) -> Path:

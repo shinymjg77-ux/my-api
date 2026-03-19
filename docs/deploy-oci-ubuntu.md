@@ -5,9 +5,10 @@
 이 문서는 이 프로젝트를 `OCI Ubuntu` 서버에 배포하는 실제 절차를 정리한 문서다. 예시 도메인은 `admin.example.com` 이고, 구성은 아래와 같다.
 
 - `Nginx`: 외부 진입점, HTTPS 종료, 리버스 프록시
+- `Next.js 안정 주소`: `127.0.0.1:3100`
+- `Next.js 슬롯`: `127.0.0.1:3001` (`blue`), `127.0.0.1:3002` (`green`)
 - `FastAPI 안정 주소`: `127.0.0.1:9000`
 - `FastAPI 슬롯`: `127.0.0.1:8001` (`blue`), `127.0.0.1:8002` (`green`)
-- `Next.js`: `127.0.0.1:3000`
 - `market_api`: `127.0.0.1:8100` 또는 서버 private IP `:8100`, 내부 전용
 - `systemd`: 백엔드/프론트엔드 프로세스 관리
 - `SQLite`: `/srv/my-api/data/app.db`
@@ -139,13 +140,14 @@ sudo nano /etc/my-api/frontend.env
 
 ```env
 NODE_ENV=production
-PORT=3000
+PORT=3100
 HOSTNAME=127.0.0.1
 BACKEND_BASE_URL=http://127.0.0.1:9000
 BACKEND_API_PREFIX=/api/v1
 ```
 
 운영에서는 프런트가 단일 백엔드 포트에 직접 붙지 않고, Nginx 내부 안정 주소 `http://127.0.0.1:9000` 을 보게 한다.
+실제 systemd 슬롯 서비스는 `PORT` 값을 직접 쓰지 않고, `/etc/my-api/frontend-slots/<slot>.env` 의 포트 값을 우선 사용한다.
 
 ## 4-1. 시장 신호 API 환경변수 설정
 
@@ -288,17 +290,18 @@ npm run build
 수동 실행 확인:
 
 ```bash
-cd /srv/my-api/frontend
+cd /srv/my-api/current/frontend
 set -a
 source /etc/my-api/frontend.env
 set +a
-npm run start -- --hostname 127.0.0.1 --port 3000
+npm run start -- --hostname 127.0.0.1 --port 3001
 ```
 
 다른 터미널에서 확인:
 
 ```bash
-curl -I http://127.0.0.1:3000/login
+curl -I http://127.0.0.1:3001/login
+curl -fsS http://127.0.0.1:3001/api/runtime/version
 ```
 
 브라우저에서 `/apis`를 열면 왼쪽에는 API 계층 트리, 오른쪽에는 선택한 API 상세 패널이 보여야 한다. 이 화면에는 수동 신규 등록 폼이 없고, 자동 등록된 기본 API와 기존 저장된 API를 탐색/수정하는 용도로 사용한다.
@@ -372,24 +375,29 @@ getaddrinfo EAIAGAIN ansan-jarvis.duckdns.org
 예시 유닛 파일은 저장소의 아래 파일을 사용한다.
 
 - [deploy/systemd/personal-api-admin-backend@.service](../deploy/systemd/personal-api-admin-backend@.service)
-- [deploy/systemd/personal-api-admin-frontend.service](../deploy/systemd/personal-api-admin-frontend.service)
+- [deploy/systemd/personal-api-admin-frontend@.service](../deploy/systemd/personal-api-admin-frontend@.service)
 - [deploy/systemd/personal-market-api.service](../deploy/systemd/personal-market-api.service)
 
 서버에 복사:
 
 ```bash
 sudo mkdir -p /etc/my-api/backend-slots
+sudo mkdir -p /etc/my-api/frontend-slots
 printf 'BACKEND_SLOT_PORT=8001\n' | sudo tee /etc/my-api/backend-slots/blue.env >/dev/null
 printf 'BACKEND_SLOT_PORT=8002\n' | sudo tee /etc/my-api/backend-slots/green.env >/dev/null
+printf 'FRONTEND_SLOT_PORT=3001\n' | sudo tee /etc/my-api/frontend-slots/blue.env >/dev/null
+printf 'FRONTEND_SLOT_PORT=3002\n' | sudo tee /etc/my-api/frontend-slots/green.env >/dev/null
 sudo cp /srv/my-api/deploy/systemd/personal-api-admin-backend@.service /etc/systemd/system/
-sudo cp /srv/my-api/deploy/systemd/personal-api-admin-frontend.service /etc/systemd/system/
+sudo cp /srv/my-api/deploy/systemd/personal-api-admin-frontend@.service /etc/systemd/system/
 sudo cp /srv/my-api/deploy/systemd/personal-market-api.service /etc/systemd/system/
 sudo systemctl daemon-reload
 sudo systemctl enable personal-api-admin-backend@blue
 sudo systemctl enable personal-api-admin-backend@green
-sudo systemctl enable personal-api-admin-frontend
+sudo systemctl enable personal-api-admin-frontend@blue
+sudo systemctl enable personal-api-admin-frontend@green
 sudo systemctl enable personal-market-api
-sudo systemctl start personal-api-admin-frontend
+sudo systemctl start personal-api-admin-frontend@blue
+sudo systemctl start personal-api-admin-frontend@green
 sudo systemctl start personal-market-api
 ```
 
@@ -398,7 +406,8 @@ sudo systemctl start personal-market-api
 ```bash
 sudo systemctl status personal-api-admin-backend@blue --no-pager
 sudo systemctl status personal-api-admin-backend@green --no-pager
-sudo systemctl status personal-api-admin-frontend --no-pager
+sudo systemctl status personal-api-admin-frontend@blue --no-pager
+sudo systemctl status personal-api-admin-frontend@green --no-pager
 sudo systemctl status personal-market-api --no-pager
 ```
 
@@ -407,7 +416,8 @@ sudo systemctl status personal-market-api --no-pager
 ```bash
 sudo journalctl -u personal-api-admin-backend@blue -n 100 --no-pager
 sudo journalctl -u personal-api-admin-backend@green -n 100 --no-pager
-sudo journalctl -u personal-api-admin-frontend -n 100 --no-pager
+sudo journalctl -u personal-api-admin-frontend@blue -n 100 --no-pager
+sudo journalctl -u personal-api-admin-frontend@green -n 100 --no-pager
 sudo journalctl -u personal-market-api -n 100 --no-pager
 ```
 
@@ -417,6 +427,7 @@ sudo journalctl -u personal-market-api -n 100 --no-pager
 
 - [deploy/nginx/site.conf.example](../deploy/nginx/site.conf.example)
 - [deploy/nginx/my-api-backend-upstream.conf.example](../deploy/nginx/my-api-backend-upstream.conf.example)
+- [deploy/nginx/my-api-frontend-upstream.conf.example](../deploy/nginx/my-api-frontend-upstream.conf.example)
 
 서버에 복사:
 
@@ -424,6 +435,7 @@ sudo journalctl -u personal-market-api -n 100 --no-pager
 sudo mkdir -p /var/www/certbot
 sudo cp /srv/my-api/deploy/nginx/site.conf.example /etc/nginx/sites-available/admin.example.com
 sudo cp /srv/my-api/deploy/nginx/my-api-backend-upstream.conf.example /etc/nginx/snippets/my-api-backend-upstream.conf
+sudo cp /srv/my-api/deploy/nginx/my-api-frontend-upstream.conf.example /etc/nginx/snippets/my-api-frontend-upstream.conf
 sudo ln -sf /etc/nginx/sites-available/admin.example.com /etc/nginx/sites-enabled/admin.example.com
 sudo nginx -t
 sudo systemctl reload nginx
