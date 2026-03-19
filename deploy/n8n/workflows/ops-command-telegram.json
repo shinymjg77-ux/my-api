@@ -27,7 +27,7 @@
       },
       {
         "parameters": {
-          "jsCode": "const input = items[0]?.json ?? {};\nconst headers = input.headers && typeof input.headers === 'object' ? input.headers : {};\nconst body = input.body && typeof input.body === 'object' ? input.body : input;\nconst expectedSecret = '__OPS_COMMAND_SHARED_SECRET__';\nconst providedSecret = String(headers['x-telegram-bot-api-secret-token'] ?? headers['X-Telegram-Bot-Api-Secret-Token'] ?? '').trim();\nif (!providedSecret || providedSecret !== expectedSecret) {\n  return [];\n}\n\nconst message = body.message ?? body.edited_message ?? null;\nif (!message) {\n  return [];\n}\n\nconst rawText = String(message.text ?? '').trim();\nif (!rawText) {\n  return [];\n}\n\nconst [firstToken = '', secondToken = ''] = rawText.split(/\\s+/);\nconst normalizedFirst = firstToken.split('@')[0].toLowerCase();\nif (normalizedFirst !== '/ops') {\n  return [];\n}\n\nconst requested = secondToken.trim().toLowerCase() || 'help';\nconst commandMap = {\n  help: 'status.help',\n  version: 'status.version',\n  drift: 'status.drift',\n  overview: 'status.overview',\n};\n\nconst actorId = String(message.chat?.id ?? '');\nif (!actorId) {\n  return [];\n}\n\nconst actorName = message.from?.username || [message.from?.first_name, message.from?.last_name].filter(Boolean).join(' ') || 'telegram';\n\nreturn [{\n  json: {\n    reply_chat_id: actorId,\n    actor_id: actorId,\n    actor_name: actorName,\n    raw_text: rawText,\n    requested_command: requested,\n    command: commandMap[requested] || `status.${requested}`,\n  },\n}];"
+          "jsCode": "const input = items[0]?.json ?? {};\nconst headers = input.headers && typeof input.headers === 'object' ? input.headers : {};\nconst body = input.body && typeof input.body === 'object' ? input.body : input;\nconst expectedSecret = '__OPS_COMMAND_SHARED_SECRET__';\nconst providedSecret = String(headers['x-telegram-bot-api-secret-token'] ?? headers['X-Telegram-Bot-Api-Secret-Token'] ?? '').trim();\nif (!providedSecret || providedSecret !== expectedSecret) {\n  return [];\n}\n\nconst message = body.message ?? body.edited_message ?? null;\nif (!message) {\n  return [];\n}\n\nconst rawText = String(message.text ?? '').trim();\nif (!rawText) {\n  return [];\n}\n\nconst [firstToken = '', secondToken = ''] = rawText.split(/\\s+/);\nconst normalizedFirst = firstToken.split('@')[0].toLowerCase();\nif (normalizedFirst !== '/ops') {\n  return [];\n}\n\nconst requested = secondToken.trim().toLowerCase() || 'help';\nconst commandMap = {\n  help: 'status.help',\n  version: 'status.version',\n  drift: 'status.drift',\n  overview: 'status.overview',\n};\nconst isSupported = Object.prototype.hasOwnProperty.call(commandMap, requested);\n\nconst actorId = String(message.chat?.id ?? '');\nif (!actorId) {\n  return [];\n}\n\nconst actorName = message.from?.username || [message.from?.first_name, message.from?.last_name].filter(Boolean).join(' ') || 'telegram';\n\nreturn [{\n  json: {\n    reply_chat_id: actorId,\n    actor_id: actorId,\n    actor_name: actorName,\n    raw_text: rawText,\n    requested_command: requested,\n    unsupported_command: isSupported ? '' : requested,\n    command: isSupported ? commandMap[requested] : 'status.help',\n    request_id: `ops-${Date.now()}`,\n  },\n}];"
         },
         "type": "n8n-nodes-base.code",
         "typeVersion": 2,
@@ -40,20 +40,46 @@
       },
       {
         "parameters": {
-          "jsCode": "const payload = items[0]?.json ?? {};\nconst requestId = `ops-${Date.now()}`;\nconst baseUrl = '__OPS_PUBLIC_BASE_URL__'.replace(/\\/$/, '');\nconst secret = '__OPS_COMMAND_SHARED_SECRET__';\n\nasync function main() {\n  try {\n    const response = await fetch(`${baseUrl}/api/proxy/ops/command`, {\n      method: 'POST',\n      headers: {\n        'content-type': 'application/json',\n        'x-ops-command-secret': secret,\n      },\n      body: JSON.stringify({\n        command: payload.command,\n        arguments: {},\n        request_id: requestId,\n        source: 'n8n',\n        actor: {\n          id: payload.actor_id,\n          name: payload.actor_name,\n          channel: 'telegram',\n          role: 'read_only',\n        },\n      }),\n    });\n\n    let apiPayload;\n    try {\n      apiPayload = await response.json();\n    } catch (error) {\n      apiPayload = {\n        ok: false,\n        summary: 'Invalid backend response',\n        details: [String(error?.message ?? error)],\n      };\n    }\n\n    return [{\n      json: {\n        ...payload,\n        request_id: requestId,\n        backend_status: response.status,\n        api_payload: apiPayload,\n      },\n    }];\n  } catch (error) {\n    return [{\n      json: {\n        ...payload,\n        request_id: requestId,\n        backend_status: 0,\n        api_payload: {\n          ok: false,\n          summary: 'Ops command request failed',\n          details: [String(error?.message ?? error)],\n          severity: 'critical',\n        },\n      },\n    }];\n  }\n}\n\nreturn await main();"
+          "method": "POST",
+          "url": "__OPS_PUBLIC_BASE_URL__/api/proxy/ops/command",
+          "sendHeaders": true,
+          "headerParameters": {
+            "parameters": [
+              {
+                "name": "content-type",
+                "value": "application/json"
+              },
+              {
+                "name": "x-ops-command-secret",
+                "value": "__OPS_COMMAND_SHARED_SECRET__"
+              }
+            ]
+          },
+          "sendBody": true,
+          "specifyBody": "json",
+          "jsonBody": "={{ {\n  \"command\": $('Parse Ops Command').item.json.command,\n  \"arguments\": {},\n  \"request_id\": $('Parse Ops Command').item.json.request_id,\n  \"source\": \"n8n\",\n  \"actor\": {\n    \"id\": $('Parse Ops Command').item.json.actor_id,\n    \"name\": $('Parse Ops Command').item.json.actor_name,\n    \"channel\": \"telegram\",\n    \"role\": \"read_only\"\n  }\n} }}",
+          "options": {
+            "response": {
+              "response": {
+                "neverError": true,
+                "responseFormat": "json"
+              }
+            }
+          }
         },
-        "type": "n8n-nodes-base.code",
-        "typeVersion": 2,
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.2,
         "position": [
           -128,
           -128
         ],
         "id": "73f1af2b-8435-4c8f-95a8-e5483b8fd416",
-        "name": "Run Ops Command"
+        "name": "Run Ops Command",
+        "alwaysOutputData": true
       },
       {
         "parameters": {
-          "jsCode": "const payload = items[0]?.json ?? {};\nconst api = payload.api_payload ?? {};\nconst lines = [];\n\nif (payload.raw_text) {\n  lines.push(`요청: ${payload.raw_text}`);\n}\nif (api.summary) {\n  lines.push(String(api.summary));\n}\n\nconst details = Array.isArray(api.details) ? api.details.slice(0, 8) : [];\nfor (const detail of details) {\n  lines.push(`- ${String(detail)}`);\n}\nif (!details.length && payload.backend_status && payload.backend_status !== 200) {\n  lines.push(`- backend_status=${payload.backend_status}`);\n}\n\nreturn [{\n  json: {\n    reply_chat_id: payload.reply_chat_id,\n    reply_text: lines.join('\\n').slice(0, 3500),\n  },\n}];"
+          "jsCode": "const request = $('Parse Ops Command').item.json ?? {};\nconst api = items[0]?.json ?? {};\nconst lines = [];\n\nif (request.raw_text) {\n  lines.push(`요청: ${request.raw_text}`);\n}\nif (request.unsupported_command) {\n  lines.push(`지원하지 않는 명령: ${request.unsupported_command}`);\n}\nif (api.summary) {\n  lines.push(String(api.summary));\n}\n\nconst details = Array.isArray(api.details) ? api.details.slice(0, 8) : [];\nfor (const detail of details) {\n  lines.push(`- ${String(detail)}`);\n}\nif (!lines.length) {\n  lines.push('응답을 해석할 수 없습니다.');\n}\n\nreturn [{\n  json: {\n    reply_chat_id: request.reply_chat_id,\n    reply_text: lines.join('\\n').slice(0, 3500),\n  },\n}];"
         },
         "type": "n8n-nodes-base.code",
         "typeVersion": 2,
