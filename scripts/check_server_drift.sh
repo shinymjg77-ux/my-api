@@ -127,6 +127,7 @@ else:
     release_git_sha = current_meta.get("git_sha")
     release_id = current_meta.get("release_id")
     built_at = current_meta.get("built_at")
+    release_n8n_compose_sha256 = current_meta.get("n8n_compose_sha256")
 
     if origin_main and release_git_sha != origin_main:
         status = "drift_detected"
@@ -157,7 +158,14 @@ else:
                 f"/version release_id mismatch ({version.get('release_id')} != {release_id})"
             )
 
-    if n8n_present and built_at:
+    if n8n_present and release_n8n_compose_sha256:
+        if n8n_sha256 != release_n8n_compose_sha256:
+            status = "drift_detected"
+            issues.append(
+                "n8n compose hash mismatch "
+                f"({n8n_sha256} != {release_n8n_compose_sha256})"
+            )
+    elif n8n_present and built_at:
         built_at_dt = dt.datetime.fromisoformat(built_at.replace("Z", "+00:00"))
         modified_at_dt = dt.datetime.fromtimestamp(n8n_modified_at_epoch, dt.timezone.utc)
         if modified_at_dt > built_at_dt:
