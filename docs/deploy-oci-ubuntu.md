@@ -421,7 +421,7 @@ sudo journalctl -u personal-market-api -n 100 --no-pager
 ```bash
 sudo mkdir -p /var/www/certbot
 sudo cp /srv/my-api/deploy/nginx/site.conf.example /etc/nginx/sites-available/admin.example.com
-sudo cp /srv/my-api/deploy/nginx/my-api-backend-upstream.conf.example /etc/nginx/conf.d/my-api-backend-upstream.conf
+sudo cp /srv/my-api/deploy/nginx/my-api-backend-upstream.conf.example /etc/nginx/snippets/my-api-backend-upstream.conf
 sudo ln -sf /etc/nginx/sites-available/admin.example.com /etc/nginx/sites-enabled/admin.example.com
 sudo nginx -t
 sudo systemctl reload nginx

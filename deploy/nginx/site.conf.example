@@ -4,7 +4,7 @@ server {
     listen 127.0.0.1:9000;
     server_name backend.internal;
 
-    include /etc/nginx/conf.d/my-api-backend-upstream.conf;
+    include /etc/nginx/snippets/my-api-backend-upstream.conf;
 
     proxy_set_header Host $host;
     proxy_set_header X-Real-IP $remote_addr;
