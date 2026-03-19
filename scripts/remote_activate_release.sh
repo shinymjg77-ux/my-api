@@ -244,6 +244,13 @@ LAST_FAILED_STEP=""
 log "step:ok restart frontend"
 
 verify_with_retry "frontend login" 30 1 check_frontend_login
+
+LAST_FAILED_STEP="restart market_api"
+sudo systemctl restart personal-market-api
+LAST_COMPLETED_STEP="restart market_api"
+LAST_FAILED_STEP=""
+log "step:ok restart market_api"
+
 verify_with_retry "market_api healthz" 30 1 check_market_api_healthz
 run_n8n_verification
 

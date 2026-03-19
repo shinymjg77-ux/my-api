@@ -207,7 +207,7 @@ getaddrinfo EAIAGAIN ansan-jarvis.duckdns.org
 - `1.1.1.1`
 - `8.8.8.8`
 
-`docker compose` 를 쓴다면 [deploy/docker/n8n.compose.example.yml](../deploy/docker/n8n.compose.example.yml) 예시처럼 `dns:` 를 추가한다.
+`docker compose` 를 쓴다면 [deploy/docker/n8n.compose.prod.yml](../deploy/docker/n8n.compose.prod.yml) 또는 [deploy/docker/n8n.compose.example.yml](../deploy/docker/n8n.compose.example.yml) 예시처럼 `dns:` 를 추가한다.
 
 ```yaml
 services:
@@ -511,6 +511,26 @@ sudo systemctl restart personal-market-api
 sudo systemctl reload nginx
 ```
 
+서버 중심 반자동 배포를 쓰려면 서버에 읽기 전용 저장소 미러를 한 번 준비한다.
+
+```bash
+sudo mkdir -p /srv/my-api
+sudo chown -R ubuntu:ubuntu /srv/my-api
+sudo -u ubuntu git clone https://github.com/shinymjg77-ux/my-api.git /srv/my-api/repo
+sudo cp /srv/my-api/repo/deploy/env/ops.env.example /etc/my-api/ops.env
+sudo cp /srv/my-api/repo/deploy/env/n8n.env.example /etc/my-api/n8n.env
+sudo chown root:ubuntu /etc/my-api/ops.env /etc/my-api/n8n.env
+sudo chmod 640 /etc/my-api/ops.env /etc/my-api/n8n.env
+```
+
+이후 표준 배포 명령은 아래처럼 서버 쪽 스크립트를 SSH로 트리거하는 방식이다.
+
+```bash
+./scripts/deploy_from_server.sh your-ssh-host-alias origin/main
+```
+
+서버는 `/srv/my-api/repo` 에서 ref를 fetch 한 뒤 새 release를 만들고, `n8n` compose 동기화와 앱 활성화를 스스로 수행한다.
+
 ## 12. 실패 가능 지점
 
 - DNS 가 서버 공인 IP를 가리키지 않으면 `certbot` 발급이 실패한다.
@@ -638,12 +658,42 @@ chmod +x scripts/deploy_release.sh scripts/remote_activate_release.sh
 
 배포가 끝나면 서버의 `/srv/my-api/current/.release-meta.json` 과 `https://admin.example.com/version` 이 같은 `git_sha`, `release_id`, `built_at` 를 보여야 한다.
 
+서버 중심 배포 스크립트:
+
+- [scripts/deploy_from_server.sh](../scripts/deploy_from_server.sh)
+- [scripts/server_prepare_release.sh](../scripts/server_prepare_release.sh)
+- [scripts/sync_n8n_config.sh](../scripts/sync_n8n_config.sh)
+
 주의:
 
 - 이 방식은 단일 `uvicorn` 프로세스를 재시작하므로 백엔드 전환 시 수초 수준의 짧은 끊김은 남는다.
 - 프런트 빌드와 의존성 설치는 전환 전에 끝내므로 체감 중단은 최소화한다.
 
-## 17. 추후 개선 작업
+## 17. 드리프트 감시 타이머
+
+설치 파일:
+
+- [scripts/check_server_drift.sh](../scripts/check_server_drift.sh)
+- [deploy/systemd/my-api-drift-check.service](../deploy/systemd/my-api-drift-check.service)
+- [deploy/systemd/my-api-drift-check.timer](../deploy/systemd/my-api-drift-check.timer)
+
+설치:
+
+```bash
+sudo cp /srv/my-api/current/deploy/systemd/my-api-drift-check.service /etc/systemd/system/
+sudo cp /srv/my-api/current/deploy/systemd/my-api-drift-check.timer /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable --now my-api-drift-check.timer
+```
+
+수동 점검:
+
+```bash
+/srv/my-api/current/scripts/check_server_drift.sh
+./scripts/check_release_drift.sh your-ssh-host-alias
+```
+
+## 18. 추후 개선 작업
 
 오늘 기준 운영 반영은 앱 코드 배포와 `n8n` 실운영 설정 수정이 분리되어 있다.
 다음 개발 작업은 아래 문서를 기준으로 진행하면 된다.
@@ -652,5 +702,4 @@ chmod +x scripts/deploy_release.sh scripts/remote_activate_release.sh
 
 핵심 방향:
 
-- `n8n` 실운영 설정도 저장소 기준으로 관리해 드리프트를 줄이기
 - 현재의 짧은 재시작 방식에서 blue-green 전환 기반 무중단에 가까운 배포로 확장하기

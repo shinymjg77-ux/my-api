@@ -1,0 +1,11 @@
+[Unit]
+Description=Run My API Drift Check Every 10 Minutes
+
+[Timer]
+OnBootSec=2min
+OnUnitActiveSec=10min
+AccuracySec=1min
+Unit=my-api-drift-check.service
+
+[Install]
+WantedBy=timers.target

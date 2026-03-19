@@ -38,6 +38,13 @@
 
 ## 2. n8n 운영 설정 저장소 관리
 
+상태:
+
+- 1차 구현 완료
+- 운영용 compose canonical 파일 추가
+- 서버 배포 시 `/opt/n8n/docker-compose.yml` 동기화
+- `docker compose config` 와 `docker inspect` 기반 검증 추가
+
 현재 문제:
 
 - 앱 코드는 `/srv/my-api/releases/...` 로 배포됨
@@ -56,6 +63,11 @@
 - 앱 배포와 `n8n` 운영 설정 반영 상태를 같은 절차에서 검증할 수 있어야 함
 
 ## 3. 무중단에 가까운 배포
+
+상태:
+
+- 아직 미구현
+- 다음 단계 우선 과제
 
 현재 상태:
 

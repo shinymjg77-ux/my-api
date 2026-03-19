@@ -1,0 +1,10 @@
+[Unit]
+Description=My API Drift Check
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=ubuntu
+Group=ubuntu
+ExecStart=/bin/bash -lc '/srv/my-api/current/scripts/check_server_drift.sh --alert-on-drift'
