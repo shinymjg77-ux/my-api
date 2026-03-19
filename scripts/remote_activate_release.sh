@@ -79,6 +79,7 @@ log() {
 record_drift_timer_state() {
   if sudo systemctl is-active --quiet my-api-drift-check.timer; then
     DRIFT_TIMER_WAS_ACTIVE=true
+    sudo systemctl stop my-api-drift-check.timer
   fi
 
   if sudo systemctl is-enabled --quiet my-api-drift-check.timer; then
