@@ -380,6 +380,18 @@ curl -H "X-Job-Secret: <JOB_SHARED_SECRET>" "https://admin.example.com/api/proxy
 - `/ops drift`
 - `/ops overview`
 
+이 워크플로우는 `Telegram Trigger` 가 아니라 일반 `n8n` webhook 으로 Telegram update 를 받는다.
+공개 Nginx에서 `/webhook/` 과 `/webhook-test/` 경로를 `127.0.0.1:5678` 로 프록시해야 한다.
+또한 `/etc/my-api/n8n.env` 의 `WEBHOOK_URL` 은 공개 HTTPS 도메인으로 맞춰야 한다.
+텔레그램 bot webhook URL 은 아래처럼 등록한다.
+
+```bash
+curl -fsS "https://api.telegram.org/bot<TELEGRAM_BOT_TOKEN>/setWebhook" \
+  --data-urlencode "url=https://admin.example.com/webhook/telegram/ops-command" \
+  --data-urlencode "secret_token=<OPS_COMMAND_SHARED_SECRET>" \
+  --data-urlencode 'allowed_updates=["message"]'
+```
+
 실패 알림 문구는 원문 오류를 유지하면서 앞에 분류 문구를 붙이는 편이 좋다.
 
 예:
@@ -560,6 +572,7 @@ OPS_PUBLIC_BASE_URL=https://admin.example.com
 OPS_COMMAND_SHARED_SECRET=replace-with-the-same-backend-ops-command-secret
 OPS_COMMAND_ALLOWED_CHAT_IDS=123456789
 N8N_TELEGRAM_CREDENTIAL_ID=replace-with-existing-telegram-credential-id
+WEBHOOK_URL=https://admin.example.com/
 ```
 
 이후 표준 배포 명령은 아래처럼 서버 쪽 스크립트를 SSH로 트리거하는 방식이다.

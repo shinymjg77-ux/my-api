@@ -1,40 +1,33 @@
 [
   {
-    "updatedAt": "2026-03-19T03:00:00.000Z",
-    "createdAt": "2026-03-19T03:00:00.000Z",
+    "updatedAt": "2026-03-19T03:20:00.000Z",
+    "createdAt": "2026-03-19T03:20:00.000Z",
     "id": "opsCommandTelegram",
     "name": "Ops command",
-    "description": "Receives /ops commands from the existing Telegram bot, calls the backend read-only ops API, and replies with a short status summary.",
+    "description": "Receives Telegram bot webhook updates through the public /webhook path, calls the backend read-only ops API, and replies with a short status summary.",
     "active": true,
     "isArchived": false,
     "nodes": [
       {
         "parameters": {
-          "updates": [
-            "message"
-          ],
-          "additionalFields": {
-            "chatIds": "__OPS_COMMAND_ALLOWED_CHAT_IDS__"
-          }
+          "httpMethod": "POST",
+          "path": "telegram/ops-command",
+          "responseMode": "onReceived",
+          "options": {}
         },
-        "type": "n8n-nodes-base.telegramTrigger",
-        "typeVersion": 1.2,
+        "type": "n8n-nodes-base.webhook",
+        "typeVersion": 2.1,
         "position": [
           -640,
           -128
         ],
-        "id": "d1282d8d-f257-4ef3-8b01-cb4d4f5e43e0",
-        "name": "Telegram Trigger",
-        "credentials": {
-          "telegramApi": {
-            "id": "__N8N_TELEGRAM_CREDENTIAL_ID__",
-            "name": "Telegram account"
-          }
-        }
+        "id": "c9d4b31a-d483-4958-a37f-c2f6789d94b7",
+        "name": "Telegram Webhook",
+        "webhookId": "ops-command-telegram"
       },
       {
         "parameters": {
-          "jsCode": "const update = items[0]?.json ?? {};\nconst message = update.message ?? update.edited_message ?? null;\nif (!message) return [];\n\nconst rawText = String(message.text ?? '').trim();\nif (!rawText) return [];\n\nconst [firstToken = '', secondToken = ''] = rawText.split(/\\s+/);\nconst normalizedFirst = firstToken.split('@')[0].toLowerCase();\nif (normalizedFirst !== '/ops') {\n  return [];\n}\n\nconst requested = secondToken.trim().toLowerCase() || 'help';\nconst commandMap = {\n  help: 'status.help',\n  version: 'status.version',\n  drift: 'status.drift',\n  overview: 'status.overview',\n};\n\nconst actorId = String(message.chat?.id ?? '');\nif (!actorId) {\n  return [];\n}\n\nconst actorName = message.from?.username || [message.from?.first_name, message.from?.last_name].filter(Boolean).join(' ') || 'telegram';\n\nreturn [{\n  json: {\n    reply_chat_id: actorId,\n    actor_id: actorId,\n    actor_name: actorName,\n    raw_text: rawText,\n    requested_command: requested,\n    command: commandMap[requested] || `status.${requested}`,\n  },\n}];"
+          "jsCode": "const input = items[0]?.json ?? {};\nconst headers = input.headers && typeof input.headers === 'object' ? input.headers : {};\nconst body = input.body && typeof input.body === 'object' ? input.body : input;\nconst expectedSecret = '__OPS_COMMAND_SHARED_SECRET__';\nconst providedSecret = String(headers['x-telegram-bot-api-secret-token'] ?? headers['X-Telegram-Bot-Api-Secret-Token'] ?? '').trim();\nif (!providedSecret || providedSecret !== expectedSecret) {\n  return [];\n}\n\nconst message = body.message ?? body.edited_message ?? null;\nif (!message) {\n  return [];\n}\n\nconst rawText = String(message.text ?? '').trim();\nif (!rawText) {\n  return [];\n}\n\nconst [firstToken = '', secondToken = ''] = rawText.split(/\\s+/);\nconst normalizedFirst = firstToken.split('@')[0].toLowerCase();\nif (normalizedFirst !== '/ops') {\n  return [];\n}\n\nconst requested = secondToken.trim().toLowerCase() || 'help';\nconst commandMap = {\n  help: 'status.help',\n  version: 'status.version',\n  drift: 'status.drift',\n  overview: 'status.overview',\n};\n\nconst actorId = String(message.chat?.id ?? '');\nif (!actorId) {\n  return [];\n}\n\nconst actorName = message.from?.username || [message.from?.first_name, message.from?.last_name].filter(Boolean).join(' ') || 'telegram';\n\nreturn [{\n  json: {\n    reply_chat_id: actorId,\n    actor_id: actorId,\n    actor_name: actorName,\n    raw_text: rawText,\n    requested_command: requested,\n    command: commandMap[requested] || `status.${requested}`,\n  },\n}];"
         },
         "type": "n8n-nodes-base.code",
         "typeVersion": 2,
@@ -94,7 +87,7 @@
       }
     ],
     "connections": {
-      "Telegram Trigger": {
+      "Telegram Webhook": {
         "main": [
           [
             {
