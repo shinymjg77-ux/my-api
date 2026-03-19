@@ -25,7 +25,7 @@ jobs:
         run: pip install -r backend/requirements.txt
 
       - name: Install dev dependencies
-        run: pip install ruff
+        run: pip install ruff httpx
 
       - name: Create CI environment file
         run: |
@@ -58,8 +58,7 @@ jobs:
         run: python -c "from app.main import app; print(app.title)"
 
       - name: Run backend tests
-        working-directory: backend
-        run: python -m unittest discover -s tests -v
+        run: python -m unittest discover -s backend/tests -v
 
   frontend:
     name: Frontend Build & Type Check
@@ -114,7 +113,10 @@ jobs:
       - name: Audit Python dependencies
         run: |
           pip install pip-audit
-          pip-audit -r backend/requirements.txt
+          # CVE-2024-23342 is reported on python-jose's transitive ecdsa dependency.
+          # No fixed ecdsa release is currently available, so keep the audit signal
+          # but suppress that specific advisory until upstream publishes a fix.
+          pip-audit --ignore-vuln CVE-2024-23342 -r backend/requirements.txt
 
       - name: Install frontend dependencies
         working-directory: frontend
