@@ -33,6 +33,38 @@ log() {
   echo "[$(timestamp)] $*"
 }
 
+load_backend_runtime_env() {
+  if [[ -r "$BACKEND_ENV" ]]; then
+    set -a
+    . "$BACKEND_ENV"
+    set +a
+    return 0
+  fi
+
+  if sudo test -r "$BACKEND_ENV"; then
+    eval "$(
+      sudo python3 - <<'PY' "$BACKEND_ENV"
+import pathlib
+import shlex
+import sys
+
+env_path = pathlib.Path(sys.argv[1])
+values = {}
+for raw_line in env_path.read_text(encoding="utf-8").splitlines():
+    line = raw_line.strip()
+    if not line or line.startswith("#") or "=" not in line:
+        continue
+    key, value = line.split("=", 1)
+    if key in {"ENVIRONMENT", "JOB_SHARED_SECRET"}:
+        values[key] = value
+
+for key, value in values.items():
+    print(f"export {key}={shlex.quote(value)}")
+PY
+    )"
+  fi
+}
+
 read_release_meta_field() {
   local field="$1"
   python3 - <<'PY' "$RELEASE_META_FILE" "$field"
@@ -140,12 +172,8 @@ run_n8n_verification() {
   local exit_code=0
   local environment_name="production"
 
-  if [[ -r "$BACKEND_ENV" ]]; then
-    set -a
-    . "$BACKEND_ENV"
-    set +a
-    environment_name="${ENVIRONMENT:-production}"
-  fi
+  load_backend_runtime_env
+  environment_name="${ENVIRONMENT:-production}"
 
   set +e
   "$RELEASE_DIR/scripts/check_n8n_dns.sh"
