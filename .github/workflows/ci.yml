@@ -9,7 +9,7 @@ on:
 
 jobs:
   backend:
-    name: Backend Smoke Check
+    name: Backend Tests
     runs-on: ubuntu-latest
 
     steps:
@@ -24,6 +24,9 @@ jobs:
       - name: Install backend dependencies
         run: pip install -r backend/requirements.txt
 
+      - name: Install dev dependencies
+        run: pip install ruff
+
       - name: Create CI environment file
         run: |
           cat > .env <<'EOF'
@@ -33,7 +36,8 @@ jobs:
           API_PREFIX=/api/v1
           SECRET_KEY=ci-secret-key-0123456789abcdef0123456789
           ENCRYPTION_KEY=x0Rr5xM7XjM2kP1XxP0cG7QxTq4n2mQhW1Qm0rF1R9k=
-          ACCESS_TOKEN_EXPIRE_MINUTES=720
+          JOB_SHARED_SECRET=ci-job-secret-0123456789abcdef0123456789abcd
+          ACCESS_TOKEN_EXPIRE_MINUTES=120
           ADMIN_COOKIE_NAME=admin_session
           COOKIE_SECURE=false
           COOKIE_SAMESITE=lax
@@ -45,12 +49,20 @@ jobs:
           LOG_PAGE_SIZE_MAX=100
           EOF
 
+      - name: Lint with ruff
+        working-directory: backend
+        run: ruff check .
+
       - name: Import backend app
         working-directory: backend
         run: python -c "from app.main import app; print(app.title)"
 
+      - name: Run backend tests
+        working-directory: backend
+        run: python -m unittest discover -s tests -v
+
   frontend:
-    name: Frontend Build Check
+    name: Frontend Build & Type Check
     runs-on: ubuntu-latest
 
     steps:
@@ -74,3 +86,40 @@ jobs:
           BACKEND_BASE_URL: http://127.0.0.1:8000
           BACKEND_API_PREFIX: /api/v1
         run: npm run build
+
+      - name: Type check
+        working-directory: frontend
+        run: npx tsc --noEmit
+
+  audit:
+    name: Dependency Audit
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Audit Python dependencies
+        run: |
+          pip install pip-audit
+          pip-audit -r backend/requirements.txt
+
+      - name: Install frontend dependencies
+        working-directory: frontend
+        run: npm ci
+
+      - name: Audit Node dependencies
+        working-directory: frontend
+        run: npm audit --audit-level=high

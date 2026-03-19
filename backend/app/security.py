@@ -11,7 +11,7 @@ from .config import settings
 
 
 ALGORITHM = "HS256"
-PBKDF2_ITERATIONS = 390_000
+PBKDF2_ITERATIONS = 600_000
 
 
 def get_password_hash(password: str) -> str:

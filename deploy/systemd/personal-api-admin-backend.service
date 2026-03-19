@@ -9,12 +9,18 @@ User=ubuntu
 Group=ubuntu
 WorkingDirectory=/srv/my-api/current/backend
 EnvironmentFile=/etc/my-api/backend.env
+Environment=PM2_HOME=/home/ubuntu/.pm2
 ExecStart=/srv/my-api/.venv/bin/uvicorn app.main:app --host 127.0.0.1 --port 8000 --proxy-headers
 Restart=always
 RestartSec=3
 TimeoutStopSec=15
 PrivateTmp=true
 NoNewPrivileges=true
+ProtectSystem=strict
+ReadWritePaths=/srv/my-api/data /home/ubuntu/.pm2
+MemoryMax=512M
+CPUQuota=80%
+TasksMax=64
 
 [Install]
 WantedBy=multi-user.target

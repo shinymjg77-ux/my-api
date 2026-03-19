@@ -17,28 +17,37 @@ export function LoginForm() {
     setError("");
     setIsPending(true);
 
-    const formData = new FormData(event.currentTarget);
-    const response = await fetch("/api/auth/login", {
-      method: "POST",
-      headers: {
-        "content-type": "application/json",
-      },
-      body: JSON.stringify({
-        username: String(formData.get("username") ?? ""),
-        password: String(formData.get("password") ?? ""),
-      }),
-      credentials: "same-origin",
-    });
+    try {
+      const formData = new FormData(event.currentTarget);
+      const response = await fetch("/api/auth/login", {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({
+          username: String(formData.get("username") ?? ""),
+          password: String(formData.get("password") ?? ""),
+        }),
+        credentials: "same-origin",
+      });
 
-    if (!response.ok) {
-      setError(await readErrorMessage(response));
+      if (!response.ok) {
+        setError(await readErrorMessage(response));
+        return;
+      }
+
+      const nextPath = searchParams.get("next");
+      const safeNext =
+        nextPath && nextPath.startsWith("/") && !nextPath.startsWith("//")
+          ? nextPath
+          : "/dashboard";
+      router.push(safeNext);
+      router.refresh();
+    } catch {
+      setError("서버에 연결할 수 없습니다. 네트워크 상태를 확인해주세요.");
+    } finally {
       setIsPending(false);
-      return;
     }
-
-    const nextPath = searchParams.get("next");
-    router.push(nextPath && nextPath.startsWith("/") ? nextPath : "/dashboard");
-    router.refresh();
   }
 
   return (
@@ -58,7 +67,7 @@ export function LoginForm() {
       <form className="space-y-5" onSubmit={handleSubmit}>
         <label className="field">
           <span className="label">사용자명</span>
-          <input className="input" name="username" placeholder="admin" autoComplete="username" />
+          <input className="input" name="username" placeholder="admin" autoComplete="username" required />
         </label>
 
         <label className="field">
@@ -69,10 +78,15 @@ export function LoginForm() {
             placeholder="비밀번호"
             type="password"
             autoComplete="current-password"
+            required
           />
         </label>
 
-        {error ? <p className="rounded-xl border border-danger/20 bg-dangerSoft px-4 py-3 text-sm text-danger">{error}</p> : null}
+        {error ? (
+          <p role="alert" className="rounded-xl border border-danger/20 bg-dangerSoft px-4 py-3 text-sm text-danger">
+            {error}
+          </p>
+        ) : null}
 
         <button className="button-primary w-full" type="submit" disabled={isPending}>
           {isPending ? "로그인 중..." : "로그인"}

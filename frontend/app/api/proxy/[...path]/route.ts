@@ -2,30 +2,25 @@ import { proxyToBackend } from "@/lib/server-api";
 
 
 function resolvePath(params: { path: string[] }) {
-  return `/${params.path.join("/")}`;
+  const joined = params.path.join("/");
+  if (joined.includes("..")) {
+    return null;
+  }
+  return `/${joined}`;
 }
 
 
-export async function GET(request: Request, { params }: { params: Promise<{ path: string[] }> }) {
-  return proxyToBackend(request, resolvePath(await params));
+async function handle(request: Request, { params }: { params: Promise<{ path: string[] }> }) {
+  const path = resolvePath(await params);
+  if (!path) {
+    return Response.json({ detail: "Invalid path" }, { status: 400 });
+  }
+  return proxyToBackend(request, path);
 }
 
 
-export async function POST(request: Request, { params }: { params: Promise<{ path: string[] }> }) {
-  return proxyToBackend(request, resolvePath(await params));
-}
-
-
-export async function PUT(request: Request, { params }: { params: Promise<{ path: string[] }> }) {
-  return proxyToBackend(request, resolvePath(await params));
-}
-
-
-export async function PATCH(request: Request, { params }: { params: Promise<{ path: string[] }> }) {
-  return proxyToBackend(request, resolvePath(await params));
-}
-
-
-export async function DELETE(request: Request, { params }: { params: Promise<{ path: string[] }> }) {
-  return proxyToBackend(request, resolvePath(await params));
-}
+export const GET = handle;
+export const POST = handle;
+export const PUT = handle;
+export const PATCH = handle;
+export const DELETE = handle;

@@ -49,9 +49,15 @@ export default async function LoginPage() {
           </div>
         </section>
 
-        <section className="panel-strong flex items-center justify-center p-6 sm:p-10">
-          <LoginForm />
-        </section>
+        <div className="space-y-4">
+          <p className="text-center text-sm text-muted lg:hidden">
+            혼자 운영하는 API·DB 관리자 콘솔
+          </p>
+
+          <section className="panel-strong flex items-center justify-center p-6 sm:p-10">
+            <LoginForm />
+          </section>
+        </div>
       </div>
     </main>
   );

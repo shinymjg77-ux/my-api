@@ -24,6 +24,7 @@ export const metadata: Metadata = {
     template: "%s | Personal API Admin",
   },
   description: "Personal operations console for API and database management.",
+  robots: { index: false, follow: false },
 };
 
 

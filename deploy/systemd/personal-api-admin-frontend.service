@@ -16,6 +16,11 @@ RestartSec=3
 TimeoutStopSec=15
 PrivateTmp=true
 NoNewPrivileges=true
+ProtectSystem=strict
+ReadWritePaths=/srv/my-api/releases
+MemoryMax=512M
+CPUQuota=80%
+TasksMax=64
 
 [Install]
 WantedBy=multi-user.target

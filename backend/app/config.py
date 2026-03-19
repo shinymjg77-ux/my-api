@@ -1,3 +1,4 @@
+import json
 from pathlib import Path
 
 from pydantic import Field, field_validator
@@ -23,10 +24,10 @@ class Settings(BaseSettings):
 
     secret_key: str = Field(..., min_length=32)
     encryption_key: str = Field(..., min_length=44)
-    job_shared_secret: str = Field("development-job-shared-secret", min_length=16)
-    access_token_expire_minutes: int = 60 * 12
+    job_shared_secret: str = Field(..., min_length=32)
+    access_token_expire_minutes: int = 120
     admin_cookie_name: str = "admin_session"
-    cookie_secure: bool = False
+    cookie_secure: bool = True
     cookie_samesite: str = "lax"
 
     database_url: str = f"sqlite:///{DEFAULT_SQLITE_PATH.as_posix()}"
@@ -52,7 +53,13 @@ class Settings(BaseSettings):
     def parse_cors_origins(cls, value: str | list[str]) -> list[str]:
         if isinstance(value, list):
             return value
-        return [item.strip() for item in value.split(",") if item.strip()]
+        normalized = value.strip()
+        if normalized.startswith("["):
+            parsed = json.loads(normalized)
+            if not isinstance(parsed, list) or not all(isinstance(item, str) for item in parsed):
+                raise ValueError("CORS_ORIGINS JSON payload must be a list of strings")
+            return [item.strip() for item in parsed if item.strip()]
+        return [item.strip() for item in normalized.split(",") if item.strip()]
 
     @field_validator("managed_api_admin_base_url", "managed_api_market_base_url")
     @classmethod

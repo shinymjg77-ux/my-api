@@ -46,7 +46,7 @@ export function AdminShell({ admin, children }: AdminShellProps) {
             <p className="mt-2 text-sm leading-6 text-muted">혼자 운영하는 API와 DB 상태를 매일 확인하는 관리자 셸입니다.</p>
           </div>
 
-          <nav className="flex-1 space-y-2 px-4 py-5">
+          <nav aria-label="주요 탐색" className="flex-1 space-y-2 px-4 py-5">
             {navItems.map((item) => {
               const isActive = pathname === item.href || pathname.startsWith(`${item.href}/`);
               return (
@@ -83,7 +83,12 @@ export function AdminShell({ admin, children }: AdminShellProps) {
               <p className="text-xs font-semibold uppercase tracking-[0.18em] text-accent">Personal API Admin</p>
               <h2 className="mt-1 text-lg font-semibold text-ink">{currentSection?.label ?? "Operations"}</h2>
             </div>
-            <button className="button-secondary" type="button" onClick={() => setIsMenuOpen((value) => !value)}>
+            <button
+              className="button-secondary"
+              type="button"
+              aria-expanded={isMenuOpen}
+              onClick={() => setIsMenuOpen((value) => !value)}
+            >
               {isMenuOpen ? "메뉴 닫기" : "메뉴"}
             </button>
           </header>

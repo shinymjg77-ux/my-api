@@ -41,13 +41,12 @@ function buildBackendUrl(path: string, query?: Record<string, QueryValue>) {
 async function copyBackendResponse(response: Response) {
   const headers = new Headers();
   const contentType = response.headers.get("content-type");
-  const setCookie = response.headers.get("set-cookie");
 
   if (contentType) {
     headers.set("content-type", contentType);
   }
-  if (setCookie) {
-    headers.set("set-cookie", setCookie);
+  for (const value of response.headers.getSetCookie()) {
+    headers.append("set-cookie", value);
   }
 
   return new Response(await response.arrayBuffer(), {
