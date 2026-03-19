@@ -452,6 +452,7 @@ sudo ufw status
 ```bash
 curl -I https://admin.example.com/login
 curl https://admin.example.com/healthz
+curl https://admin.example.com/version
 ```
 
 브라우저 확인 항목:
@@ -479,6 +480,11 @@ docker exec n8n node -e '(async()=>{try{const r=await fetch("https://ansan-jarvi
 ```
 
 반복 점검이 필요하면 [scripts/check_n8n_dns.sh](../scripts/check_n8n_dns.sh) 를 서버에 복사해서 사용할 수 있다.
+버전 드리프트를 한 번에 점검하려면 로컬에서 [scripts/check_release_drift.sh](../scripts/check_release_drift.sh) 를 실행한다.
+
+```bash
+./scripts/check_release_drift.sh your-ssh-host-alias
+```
 
 ## 11. 업데이트 배포 절차
 
@@ -630,6 +636,8 @@ chmod +x scripts/deploy_release.sh scripts/remote_activate_release.sh
 ./scripts/deploy_release.sh your-ssh-host-alias
 ```
 
+배포가 끝나면 서버의 `/srv/my-api/current/.release-meta.json` 과 `https://admin.example.com/version` 이 같은 `git_sha`, `release_id`, `built_at` 를 보여야 한다.
+
 주의:
 
 - 이 방식은 단일 `uvicorn` 프로세스를 재시작하므로 백엔드 전환 시 수초 수준의 짧은 끊김은 남는다.
@@ -644,6 +652,5 @@ chmod +x scripts/deploy_release.sh scripts/remote_activate_release.sh
 
 핵심 방향:
 
-- 로컬 Git / 원격 배포본 / 실행 중 서비스 버전을 한 번에 확인할 수 있게 만들기
 - `n8n` 실운영 설정도 저장소 기준으로 관리해 드리프트를 줄이기
 - 현재의 짧은 재시작 방식에서 blue-green 전환 기반 무중단에 가까운 배포로 확장하기
