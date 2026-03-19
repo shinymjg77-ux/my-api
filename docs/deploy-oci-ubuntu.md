@@ -1,5 +1,7 @@
 # OCI Ubuntu 배포 절차
 
+시스템 전체 구조와 dual-slot 배포 흐름도는 먼저 [system-overview.md](./system-overview.md) 를 보는 편이 빠르다.
+
 이 문서는 이 프로젝트를 `OCI Ubuntu` 서버에 배포하는 실제 절차를 정리한 문서다. 예시 도메인은 `admin.example.com` 이고, 구성은 아래와 같다.
 
 - `Nginx`: 외부 진입점, HTTPS 종료, 리버스 프록시

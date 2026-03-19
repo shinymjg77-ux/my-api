@@ -101,6 +101,7 @@ cp .env.example .env
 
 OCI Ubuntu 서버 배포 절차와 운영 자동화 문서는 아래를 참고하면 됩니다.
 
+- [docs/system-overview.md](docs/system-overview.md)
 - [docs/deploy-oci-ubuntu.md](docs/deploy-oci-ubuntu.md)
 
 ## GitHub 업로드 전 주의
