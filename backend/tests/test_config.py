@@ -37,6 +37,16 @@ class SettingsTests(unittest.TestCase):
             ["https://admin.example.com", "http://localhost:3000"],
         )
 
+    def test_parse_ops_command_allowed_chat_ids(self) -> None:
+        settings = Settings.model_validate(
+            {
+                **BASE_SETTINGS,
+                "ops_command_allowed_chat_ids": "8349784231, 123456789",
+            }
+        )
+
+        self.assertEqual(settings.ops_command_allowed_chat_ids_list, ["8349784231", "123456789"])
+
 
 if __name__ == "__main__":
     unittest.main()

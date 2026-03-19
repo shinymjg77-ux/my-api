@@ -6,7 +6,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from .config import settings
 from .database import Base, SessionLocal, engine, ensure_sqlite_directory, ensure_sqlite_schema
 from .release_meta import load_release_meta
-from .routers import apis, auth, dashboard, db_connections, jobs, logs
+from .routers import apis, auth, dashboard, db_connections, jobs, logs, ops
 from .seed import bootstrap_admin, bootstrap_managed_apis
 
 
@@ -34,7 +34,7 @@ app.add_middleware(
     allow_origins=settings.cors_origins,
     allow_credentials=True,
     allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE"],
-    allow_headers=["Content-Type", "X-Job-Secret"],
+    allow_headers=["Content-Type", "X-Job-Secret", "X-Ops-Command-Secret"],
 )
 
 app.include_router(auth.router, prefix=settings.api_prefix)
@@ -43,6 +43,7 @@ app.include_router(apis.router, prefix=settings.api_prefix)
 app.include_router(db_connections.router, prefix=settings.api_prefix)
 app.include_router(logs.router, prefix=settings.api_prefix)
 app.include_router(jobs.router, prefix=settings.api_prefix)
+app.include_router(ops.router, prefix=settings.api_prefix)
 
 
 @app.get("/healthz")

@@ -39,3 +39,12 @@ def require_job_secret(job_secret: Annotated[str | None, Header(alias="X-Job-Sec
     if not job_secret or not hmac.compare_digest(job_secret, settings.job_shared_secret):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid job secret")
     return job_secret
+
+
+def require_ops_command_secret(
+    ops_command_secret: Annotated[str | None, Header(alias="X-Ops-Command-Secret")] = None,
+) -> str:
+    expected_secret = settings.ops_command_shared_secret
+    if not expected_secret or not ops_command_secret or not hmac.compare_digest(ops_command_secret, expected_secret):
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid ops command secret")
+    return ops_command_secret

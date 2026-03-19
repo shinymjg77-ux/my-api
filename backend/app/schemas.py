@@ -1,5 +1,5 @@
 from datetime import datetime
-from typing import Literal
+from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
@@ -318,6 +318,49 @@ class OpsDashboardResponse(BaseModel):
     pm2_processes: list[OpsProcessStatusResponse]
     summary: OpsDashboardSummaryResponse
     warnings: list[str]
+
+
+class OpsCommandActor(BaseModel):
+    id: str = Field(..., min_length=1, max_length=100)
+    name: str | None = Field(default=None, max_length=100)
+    channel: str = Field(..., min_length=1, max_length=50)
+    role: Literal["read_only", "operator", "admin"] = "read_only"
+
+    @field_validator("id", "channel")
+    @classmethod
+    def normalize_required_actor_fields(cls, value: str) -> str:
+        return value.strip()
+
+    @field_validator("name")
+    @classmethod
+    def normalize_optional_actor_name(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        stripped = value.strip()
+        return stripped or None
+
+
+class OpsCommandRequest(BaseModel):
+    command: str = Field(..., min_length=1, max_length=100)
+    arguments: dict[str, Any] = Field(default_factory=dict)
+    request_id: str = Field(..., min_length=1, max_length=120)
+    source: Literal["n8n"]
+    actor: OpsCommandActor
+
+    @field_validator("command", "request_id")
+    @classmethod
+    def normalize_required_command_fields(cls, value: str) -> str:
+        return value.strip()
+
+
+class OpsCommandResponse(BaseModel):
+    ok: bool
+    command: str
+    summary: str
+    details: list[str]
+    data: dict[str, Any] = Field(default_factory=dict)
+    severity: Literal["info", "warning", "critical"]
+    request_id: str
 
 
 class OpsCheckIssueResponse(BaseModel):

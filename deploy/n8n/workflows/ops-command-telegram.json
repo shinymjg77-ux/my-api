@@ -1,0 +1,148 @@
+[
+  {
+    "updatedAt": "2026-03-19T03:00:00.000Z",
+    "createdAt": "2026-03-19T03:00:00.000Z",
+    "id": "opsCommandTelegram",
+    "name": "Ops command",
+    "description": "Receives /ops commands from the existing Telegram bot, calls the backend read-only ops API, and replies with a short status summary.",
+    "active": true,
+    "isArchived": false,
+    "nodes": [
+      {
+        "parameters": {
+          "updates": [
+            "message"
+          ],
+          "additionalFields": {
+            "chatIds": "__OPS_COMMAND_ALLOWED_CHAT_IDS__"
+          }
+        },
+        "type": "n8n-nodes-base.telegramTrigger",
+        "typeVersion": 1.2,
+        "position": [
+          -640,
+          -128
+        ],
+        "id": "d1282d8d-f257-4ef3-8b01-cb4d4f5e43e0",
+        "name": "Telegram Trigger",
+        "credentials": {
+          "telegramApi": {
+            "id": "__N8N_TELEGRAM_CREDENTIAL_ID__",
+            "name": "Telegram account"
+          }
+        }
+      },
+      {
+        "parameters": {
+          "jsCode": "const update = items[0]?.json ?? {};\nconst message = update.message ?? update.edited_message ?? null;\nif (!message) return [];\n\nconst rawText = String(message.text ?? '').trim();\nif (!rawText) return [];\n\nconst [firstToken = '', secondToken = ''] = rawText.split(/\\s+/);\nconst normalizedFirst = firstToken.split('@')[0].toLowerCase();\nif (normalizedFirst !== '/ops') {\n  return [];\n}\n\nconst requested = secondToken.trim().toLowerCase() || 'help';\nconst commandMap = {\n  help: 'status.help',\n  version: 'status.version',\n  drift: 'status.drift',\n  overview: 'status.overview',\n};\n\nconst actorId = String(message.chat?.id ?? '');\nif (!actorId) {\n  return [];\n}\n\nconst actorName = message.from?.username || [message.from?.first_name, message.from?.last_name].filter(Boolean).join(' ') || 'telegram';\n\nreturn [{\n  json: {\n    reply_chat_id: actorId,\n    actor_id: actorId,\n    actor_name: actorName,\n    raw_text: rawText,\n    requested_command: requested,\n    command: commandMap[requested] || `status.${requested}`,\n  },\n}];"
+        },
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          -384,
+          -128
+        ],
+        "id": "ea5e6741-0ccd-4da7-9fd9-ed023adf34ea",
+        "name": "Parse Ops Command"
+      },
+      {
+        "parameters": {
+          "jsCode": "const payload = items[0]?.json ?? {};\nconst requestId = `ops-${Date.now()}`;\nconst baseUrl = '__OPS_PUBLIC_BASE_URL__'.replace(/\\/$/, '');\nconst secret = '__OPS_COMMAND_SHARED_SECRET__';\n\nasync function main() {\n  try {\n    const response = await fetch(`${baseUrl}/api/proxy/ops/command`, {\n      method: 'POST',\n      headers: {\n        'content-type': 'application/json',\n        'x-ops-command-secret': secret,\n      },\n      body: JSON.stringify({\n        command: payload.command,\n        arguments: {},\n        request_id: requestId,\n        source: 'n8n',\n        actor: {\n          id: payload.actor_id,\n          name: payload.actor_name,\n          channel: 'telegram',\n          role: 'read_only',\n        },\n      }),\n    });\n\n    let apiPayload;\n    try {\n      apiPayload = await response.json();\n    } catch (error) {\n      apiPayload = {\n        ok: false,\n        summary: 'Invalid backend response',\n        details: [String(error?.message ?? error)],\n      };\n    }\n\n    return [{\n      json: {\n        ...payload,\n        request_id: requestId,\n        backend_status: response.status,\n        api_payload: apiPayload,\n      },\n    }];\n  } catch (error) {\n    return [{\n      json: {\n        ...payload,\n        request_id: requestId,\n        backend_status: 0,\n        api_payload: {\n          ok: false,\n          summary: 'Ops command request failed',\n          details: [String(error?.message ?? error)],\n          severity: 'critical',\n        },\n      },\n    }];\n  }\n}\n\nreturn await main();"
+        },
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          -128,
+          -128
+        ],
+        "id": "73f1af2b-8435-4c8f-95a8-e5483b8fd416",
+        "name": "Run Ops Command"
+      },
+      {
+        "parameters": {
+          "jsCode": "const payload = items[0]?.json ?? {};\nconst api = payload.api_payload ?? {};\nconst lines = [];\n\nif (payload.raw_text) {\n  lines.push(`요청: ${payload.raw_text}`);\n}\nif (api.summary) {\n  lines.push(String(api.summary));\n}\n\nconst details = Array.isArray(api.details) ? api.details.slice(0, 8) : [];\nfor (const detail of details) {\n  lines.push(`- ${String(detail)}`);\n}\nif (!details.length && payload.backend_status && payload.backend_status !== 200) {\n  lines.push(`- backend_status=${payload.backend_status}`);\n}\n\nreturn [{\n  json: {\n    reply_chat_id: payload.reply_chat_id,\n    reply_text: lines.join('\\n').slice(0, 3500),\n  },\n}];"
+        },
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          128,
+          -128
+        ],
+        "id": "59cf474e-611a-4fa1-b4df-48ab6f4b130b",
+        "name": "Format Reply"
+      },
+      {
+        "parameters": {
+          "chatId": "={{$json.reply_chat_id}}",
+          "text": "={{$json.reply_text}}",
+          "additionalFields": {}
+        },
+        "type": "n8n-nodes-base.telegram",
+        "typeVersion": 1.2,
+        "position": [
+          384,
+          -128
+        ],
+        "id": "7a71c31d-5d41-44ce-b4e7-cf98be86fd82",
+        "name": "Send Ops Reply",
+        "credentials": {
+          "telegramApi": {
+            "id": "__N8N_TELEGRAM_CREDENTIAL_ID__",
+            "name": "Telegram account"
+          }
+        }
+      }
+    ],
+    "connections": {
+      "Telegram Trigger": {
+        "main": [
+          [
+            {
+              "node": "Parse Ops Command",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Parse Ops Command": {
+        "main": [
+          [
+            {
+              "node": "Run Ops Command",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Run Ops Command": {
+        "main": [
+          [
+            {
+              "node": "Format Reply",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Format Reply": {
+        "main": [
+          [
+            {
+              "node": "Send Ops Reply",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      }
+    },
+    "settings": {
+      "executionOrder": "v1",
+      "binaryMode": "separate",
+      "availableInMCP": false
+    }
+  }
+]

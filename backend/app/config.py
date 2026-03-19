@@ -41,6 +41,8 @@ class Settings(BaseSettings):
     log_page_size_max: int = 100
     managed_api_admin_base_url: str = "http://127.0.0.1:9000"
     managed_api_market_base_url: str = "http://127.0.0.1:8100"
+    ops_command_shared_secret: str | None = None
+    ops_command_allowed_chat_ids: str = ""
     ops_systemd_units: str = (
         "personal-api-admin-backend@blue.service,"
         "personal-api-admin-backend@green.service,"
@@ -71,6 +73,10 @@ class Settings(BaseSettings):
     @property
     def ops_systemd_units_list(self) -> list[str]:
         return [item.strip() for item in self.ops_systemd_units.split(",") if item.strip()]
+
+    @property
+    def ops_command_allowed_chat_ids_list(self) -> list[str]:
+        return [item.strip() for item in self.ops_command_allowed_chat_ids.split(",") if item.strip()]
 
 
 settings = Settings()

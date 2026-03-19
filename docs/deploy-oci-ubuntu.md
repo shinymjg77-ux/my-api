@@ -99,6 +99,8 @@ LOG_PAGE_SIZE_DEFAULT=20
 LOG_PAGE_SIZE_MAX=100
 MANAGED_API_ADMIN_BASE_URL=http://127.0.0.1:9000
 MANAGED_API_MARKET_BASE_URL=http://127.0.0.1:8100
+OPS_COMMAND_SHARED_SECRET=replace-with-a-random-ops-command-secret
+OPS_COMMAND_ALLOWED_CHAT_IDS=123456789
 ```
 
 `MANAGED_API_ADMIN_BASE_URL` 와 `MANAGED_API_MARKET_BASE_URL` 는 관리자 콘솔이 시작될 때 `managed_apis` 기본 항목을 자동 등록할 때 사용한다. 운영 환경에서 내부 호출 주소가 바뀌면 이 값을 같이 맞춰야 한다.
@@ -361,6 +363,23 @@ curl -H "X-Job-Secret: <JOB_SHARED_SECRET>" "https://admin.example.com/api/proxy
 - 시도 간 대기: `5초`
 - 실패 텔레그램 발송 조건: 모든 재시도 실패 후 1회만 발송
 
+조회 전용 텔레그램 운영 명령 템플릿:
+
+- [deploy/n8n/workflows/ops-command-telegram.json](../deploy/n8n/workflows/ops-command-telegram.json)
+- 같은 텔레그램 봇 credential을 재사용한다.
+- import 전 아래 placeholder를 실제 값으로 치환한다.
+- `__OPS_PUBLIC_BASE_URL__`
+- `__OPS_COMMAND_SHARED_SECRET__`
+- `__OPS_COMMAND_ALLOWED_CHAT_IDS__`
+- `__N8N_TELEGRAM_CREDENTIAL_ID__`
+
+지원 명령:
+
+- `/ops help`
+- `/ops version`
+- `/ops drift`
+- `/ops overview`
+
 실패 알림 문구는 원문 오류를 유지하면서 앞에 분류 문구를 붙이는 편이 좋다.
 
 예:
@@ -532,6 +551,15 @@ sudo cp /srv/my-api/repo/deploy/env/ops.env.example /etc/my-api/ops.env
 sudo cp /srv/my-api/repo/deploy/env/n8n.env.example /etc/my-api/n8n.env
 sudo chown root:ubuntu /etc/my-api/ops.env /etc/my-api/n8n.env
 sudo chmod 640 /etc/my-api/ops.env /etc/my-api/n8n.env
+```
+
+`/etc/my-api/n8n.env` 에는 아래 운영 명령용 값도 채운다.
+
+```env
+OPS_PUBLIC_BASE_URL=https://admin.example.com
+OPS_COMMAND_SHARED_SECRET=replace-with-the-same-backend-ops-command-secret
+OPS_COMMAND_ALLOWED_CHAT_IDS=123456789
+N8N_TELEGRAM_CREDENTIAL_ID=replace-with-existing-telegram-credential-id
 ```
 
 이후 표준 배포 명령은 아래처럼 서버 쪽 스크립트를 SSH로 트리거하는 방식이다.
