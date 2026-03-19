@@ -1,0 +1,27 @@
+[Unit]
+Description=Personal API Admin Backend Slot %i
+After=network.target
+OnFailure=my-api-alert@%p.service
+
+[Service]
+Type=simple
+User=ubuntu
+Group=ubuntu
+WorkingDirectory=/srv/my-api/slots/backend-%i/backend
+EnvironmentFile=/etc/my-api/backend.env
+EnvironmentFile=/etc/my-api/backend-slots/%i.env
+Environment=PM2_HOME=/home/ubuntu/.pm2
+ExecStart=/srv/my-api/.venv/bin/uvicorn app.main:app --host 127.0.0.1 --port ${BACKEND_SLOT_PORT} --proxy-headers
+Restart=always
+RestartSec=3
+TimeoutStopSec=15
+PrivateTmp=true
+NoNewPrivileges=true
+ProtectSystem=strict
+ReadWritePaths=/srv/my-api/data /srv/my-api/slots /home/ubuntu/.pm2
+MemoryMax=512M
+CPUQuota=80%
+TasksMax=64
+
+[Install]
+WantedBy=multi-user.target

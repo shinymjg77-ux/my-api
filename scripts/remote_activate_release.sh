@@ -2,9 +2,11 @@
 set -euo pipefail
 
 APP_ROOT="${APP_ROOT:-/srv/my-api}"
+OPS_ENV="${OPS_ENV:-/etc/my-api/ops.env}"
 FRONTEND_ENV="${FRONTEND_ENV:-/etc/my-api/frontend.env}"
 BACKEND_ENV="${BACKEND_ENV:-/etc/my-api/backend.env}"
 RELEASE_ID="${1:?release id is required}"
+DEPLOY_MODE="${2:-${DEPLOY_MODE:-full}}"
 RELEASE_DIR="$APP_ROOT/releases/$RELEASE_ID"
 CURRENT_LINK="$APP_ROOT/current"
 KEEP_RELEASES="${KEEP_RELEASES:-5}"
@@ -12,6 +14,24 @@ LOG_DIR="${LOG_DIR:-/var/log/my-api}"
 RELEASE_META_FILE="$RELEASE_DIR/.release-meta.json"
 MARKET_API_BIND_HOST="${MARKET_API_BIND_HOST:-127.0.0.1}"
 MARKET_API_PORT="${MARKET_API_PORT:-8100}"
+BACKEND_STABLE_BASE_URL="${BACKEND_STABLE_BASE_URL:-http://127.0.0.1:9000}"
+BACKEND_UPSTREAM_CONF="${BACKEND_UPSTREAM_CONF:-/etc/nginx/conf.d/my-api-backend-upstream.conf}"
+BACKEND_ACTIVE_SLOT_STATE_PATH="${BACKEND_ACTIVE_SLOT_STATE_PATH:-$APP_ROOT/state/backend-active-slot}"
+BACKEND_SLOT_ROOT="${BACKEND_SLOT_ROOT:-$APP_ROOT/slots}"
+BACKEND_SLOT_ENV_DIR="${BACKEND_SLOT_ENV_DIR:-/etc/my-api/backend-slots}"
+BACKEND_SLOTS="${BACKEND_SLOTS:-blue,green}"
+
+if [[ -r "$OPS_ENV" ]]; then
+  set -a
+  . "$OPS_ENV"
+  set +a
+  BACKEND_STABLE_BASE_URL="${BACKEND_STABLE_BASE_URL:-http://127.0.0.1:9000}"
+  BACKEND_UPSTREAM_CONF="${BACKEND_UPSTREAM_CONF:-/etc/nginx/conf.d/my-api-backend-upstream.conf}"
+  BACKEND_ACTIVE_SLOT_STATE_PATH="${BACKEND_ACTIVE_SLOT_STATE_PATH:-$APP_ROOT/state/backend-active-slot}"
+  BACKEND_SLOT_ROOT="${BACKEND_SLOT_ROOT:-$APP_ROOT/slots}"
+  BACKEND_SLOT_ENV_DIR="${BACKEND_SLOT_ENV_DIR:-/etc/my-api/backend-slots}"
+  BACKEND_SLOTS="${BACKEND_SLOTS:-blue,green}"
+fi
 
 CURRENT_BEFORE="$(readlink -f "$CURRENT_LINK" 2>/dev/null || true)"
 LAST_COMPLETED_STEP="bootstrap"
@@ -20,10 +40,11 @@ ALERT_TITLE="Release activation failed"
 ALERT_KIND="release_activation"
 RELEASE_GIT_SHA="unknown"
 RELEASE_BUILT_AT="unknown"
-
-mkdir -p "$LOG_DIR" "$APP_ROOT/releases" "$APP_ROOT/backups/sqlite"
-touch "$LOG_DIR/update.log"
-exec >>"$LOG_DIR/update.log" 2>&1
+CURRENT_BACKEND_SLOT=""
+TARGET_BACKEND_SLOT=""
+TARGET_BACKEND_PORT=""
+PREVIOUS_BACKEND_PORT=""
+BACKEND_SWITCH_APPLIED=false
 
 timestamp() {
   date -u +%Y-%m-%dT%H:%M:%SZ
@@ -31,6 +52,171 @@ timestamp() {
 
 log() {
   echo "[$(timestamp)] $*"
+}
+
+validate_mode() {
+  case "$DEPLOY_MODE" in
+    full|backend)
+      ;;
+    *)
+      echo "unsupported deploy mode: $DEPLOY_MODE" >&2
+      exit 1
+      ;;
+  esac
+}
+
+normalize_base_url() {
+  printf '%s' "${1%/}"
+}
+
+slot_link_path() {
+  local slot="$1"
+  printf '%s/backend-%s' "$BACKEND_SLOT_ROOT" "$slot"
+}
+
+slot_env_path() {
+  local slot="$1"
+  printf '%s/%s.env' "$BACKEND_SLOT_ENV_DIR" "$slot"
+}
+
+slot_default_port() {
+  case "$1" in
+    blue)
+      echo "8001"
+      ;;
+    green)
+      echo "8002"
+      ;;
+    *)
+      echo "unsupported backend slot: $1" >&2
+      exit 1
+      ;;
+  esac
+}
+
+active_backend_slot() {
+  if [[ -r "$BACKEND_ACTIVE_SLOT_STATE_PATH" ]]; then
+    local slot
+    slot="$(tr -d '[:space:]' <"$BACKEND_ACTIVE_SLOT_STATE_PATH")"
+    if [[ "$slot" == "blue" || "$slot" == "green" ]]; then
+      echo "$slot"
+      return 0
+    fi
+  fi
+
+  echo "blue"
+}
+
+inactive_backend_slot() {
+  case "$1" in
+    blue)
+      echo "green"
+      ;;
+    green)
+      echo "blue"
+      ;;
+    *)
+      echo "unsupported backend slot: $1" >&2
+      exit 1
+      ;;
+  esac
+}
+
+ensure_backend_slot_env() {
+  local slot="$1"
+  local path
+  local port
+  local temp_file
+
+  path="$(slot_env_path "$slot")"
+  port="$(slot_default_port "$slot")"
+
+  sudo install -d -m 755 "$BACKEND_SLOT_ENV_DIR"
+  if sudo test -f "$path"; then
+    return 0
+  fi
+
+  temp_file="$(mktemp)"
+  printf 'BACKEND_SLOT_PORT=%s\n' "$port" >"$temp_file"
+  sudo install -m 644 "$temp_file" "$path"
+  rm -f "$temp_file"
+}
+
+slot_port_for() {
+  local slot="$1"
+  local path
+
+  path="$(slot_env_path "$slot")"
+  if [[ -r "$path" ]]; then
+    grep '^BACKEND_SLOT_PORT=' "$path" | tail -n 1 | cut -d= -f2-
+    return 0
+  fi
+
+  sudo python3 - <<'PY' "$path"
+import pathlib
+import sys
+
+path = pathlib.Path(sys.argv[1])
+for raw_line in path.read_text(encoding="utf-8").splitlines():
+    line = raw_line.strip()
+    if not line or line.startswith("#") or "=" not in line:
+        continue
+    key, value = line.split("=", 1)
+    if key == "BACKEND_SLOT_PORT" and value.strip():
+        print(value.strip())
+        raise SystemExit(0)
+raise SystemExit("missing BACKEND_SLOT_PORT")
+PY
+}
+
+ensure_slot_link() {
+  local slot="$1"
+  local target_dir="$2"
+
+  mkdir -p "$BACKEND_SLOT_ROOT"
+  ln -sfn "$target_dir" "$(slot_link_path "$slot")"
+}
+
+record_active_backend_slot() {
+  local slot="$1"
+
+  mkdir -p "$(dirname "$BACKEND_ACTIVE_SLOT_STATE_PATH")"
+  printf '%s\n' "$slot" >"$BACKEND_ACTIVE_SLOT_STATE_PATH"
+}
+
+release_meta_json_set() {
+  local field="$1"
+  local value="$2"
+
+  python3 - <<'PY' "$RELEASE_META_FILE" "$field" "$value"
+import json
+import pathlib
+import sys
+
+meta_path = pathlib.Path(sys.argv[1])
+field = sys.argv[2]
+value = sys.argv[3]
+payload = json.loads(meta_path.read_text(encoding="utf-8"))
+payload[field] = value
+meta_path.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
+PY
+}
+
+read_release_meta_field() {
+  local field="$1"
+  python3 - <<'PY' "$RELEASE_META_FILE" "$field"
+import json
+import pathlib
+import sys
+
+meta_path = pathlib.Path(sys.argv[1])
+field = sys.argv[2]
+payload = json.loads(meta_path.read_text(encoding="utf-8"))
+value = payload.get(field)
+if not isinstance(value, str) or not value.strip():
+    raise SystemExit(f"missing release metadata field: {field}")
+print(value.strip())
+PY
 }
 
 load_backend_runtime_env() {
@@ -65,23 +251,6 @@ PY
   fi
 }
 
-read_release_meta_field() {
-  local field="$1"
-  python3 - <<'PY' "$RELEASE_META_FILE" "$field"
-import json
-import pathlib
-import sys
-
-meta_path = pathlib.Path(sys.argv[1])
-field = sys.argv[2]
-payload = json.loads(meta_path.read_text(encoding="utf-8"))
-value = payload.get(field)
-if not isinstance(value, str) or not value.strip():
-    raise SystemExit(f"missing release metadata field: {field}")
-print(value.strip())
-PY
-}
-
 alert_failure() {
   local current_after
   local body
@@ -95,9 +264,12 @@ alert_failure() {
 release_id=$RELEASE_ID
 git_sha=$RELEASE_GIT_SHA
 built_at=$RELEASE_BUILT_AT
+deploy_mode=$DEPLOY_MODE
 host=$(hostname)
 current_before=${CURRENT_BEFORE:-unknown}
 current_after=${current_after:-unknown}
+current_backend_slot=${CURRENT_BACKEND_SLOT:-unknown}
+target_backend_slot=${TARGET_BACKEND_SLOT:-unknown}
 last_completed_step=$LAST_COMPLETED_STEP
 failed_step=${LAST_FAILED_STEP:-unknown}
 alert_kind=$ALERT_KIND
@@ -106,7 +278,25 @@ EOF
   "$RELEASE_DIR/scripts/send_alert.sh" "$ALERT_TITLE" "$body" || true
 }
 
-trap alert_failure ERR
+rollback_backend_switch() {
+  if [[ "$BACKEND_SWITCH_APPLIED" != "true" || -z "$CURRENT_BACKEND_SLOT" || -z "$PREVIOUS_BACKEND_PORT" ]]; then
+    return 0
+  fi
+
+  write_backend_upstream_conf "$CURRENT_BACKEND_SLOT" "$PREVIOUS_BACKEND_PORT"
+  sudo nginx -t
+  sudo systemctl reload nginx
+  record_active_backend_slot "$CURRENT_BACKEND_SLOT"
+  BACKEND_SWITCH_APPLIED=false
+  log "step:rollback backend switch slot=$CURRENT_BACKEND_SLOT port=$PREVIOUS_BACKEND_PORT"
+}
+
+handle_failure() {
+  rollback_backend_switch || true
+  alert_failure || true
+}
+
+trap handle_failure ERR
 
 verify_with_retry() {
   local step="$1"
@@ -131,16 +321,20 @@ verify_with_retry() {
   return 1
 }
 
-check_backend_healthz() {
-  curl -fsS http://127.0.0.1:8000/healthz >/dev/null
+check_backend_healthz_url() {
+  local base_url
+  base_url="$(normalize_base_url "$1")"
+  curl -fsS "${base_url}/healthz" >/dev/null
 }
 
-check_backend_version() {
+check_backend_version_url() {
+  local base_url
   local response
 
-  response="$(curl -fsS http://127.0.0.1:8000/version)" || return 1
+  base_url="$(normalize_base_url "$1")"
+  response="$(curl -fsS "${base_url}/version")" || return 1
 
-  python3 - <<'PY' "$response" "$RELEASE_GIT_SHA" "$RELEASE_ID" "$RELEASE_BUILT_AT"
+  python3 - <<'PY' "$response" "$RELEASE_GIT_SHA" "$RELEASE_ID" "$RELEASE_BUILT_AT" "$TARGET_BACKEND_SLOT"
 import json
 import sys
 
@@ -148,6 +342,7 @@ payload = json.loads(sys.argv[1])
 expected_git_sha = sys.argv[2]
 expected_release_id = sys.argv[3]
 expected_built_at = sys.argv[4]
+expected_backend_slot = sys.argv[5]
 
 if payload.get("status") != "ok":
     raise SystemExit("backend version endpoint is not healthy")
@@ -157,6 +352,8 @@ if payload.get("release_id") != expected_release_id:
     raise SystemExit("backend release_id does not match release metadata")
 if payload.get("built_at") != expected_built_at:
     raise SystemExit("backend built_at does not match release metadata")
+if payload.get("backend_slot") != expected_backend_slot:
+    raise SystemExit("backend slot does not match release metadata")
 PY
 }
 
@@ -166,6 +363,31 @@ check_frontend_login() {
 
 check_market_api_healthz() {
   curl -fsS "http://${MARKET_API_BIND_HOST}:${MARKET_API_PORT}/healthz" >/dev/null
+}
+
+write_backend_upstream_conf() {
+  local slot="$1"
+  local port="$2"
+  local temp_file
+
+  temp_file="$(mktemp)"
+  printf 'set $my_api_backend http://127.0.0.1:%s;\n' "$port" >"$temp_file"
+  sudo install -d -m 755 "$(dirname "$BACKEND_UPSTREAM_CONF")"
+  sudo install -m 644 "$temp_file" "$BACKEND_UPSTREAM_CONF"
+  rm -f "$temp_file"
+  log "step:ok write backend upstream slot=$slot port=$port"
+}
+
+ensure_slot_runtime() {
+  local slot="$1"
+  local slot_target="$2"
+  local slot_port
+
+  ensure_backend_slot_env "$slot"
+  ensure_slot_link "$slot" "$slot_target"
+  slot_port="$(slot_port_for "$slot")"
+  sudo systemctl restart "personal-api-admin-backend@${slot}"
+  verify_with_retry "backend slot ${slot} healthz" 30 1 check_backend_healthz_url "http://127.0.0.1:${slot_port}"
 }
 
 run_n8n_verification() {
@@ -219,7 +441,50 @@ run_n8n_verification() {
   return "$exit_code"
 }
 
-log "starting release activation: $RELEASE_ID"
+cleanup_old_releases() {
+  local protected=()
+  local candidate
+
+  for candidate in "$CURRENT_LINK" "$(slot_link_path blue)" "$(slot_link_path green)"; do
+    local resolved
+    resolved="$(readlink -f "$candidate" 2>/dev/null || true)"
+    if [[ -n "$resolved" ]]; then
+      protected+=("$resolved")
+    fi
+  done
+
+  mapfile -t all_releases < <(find "$APP_ROOT/releases" -mindepth 1 -maxdepth 1 -type d | sort)
+  if (( ${#all_releases[@]} <= KEEP_RELEASES )); then
+    return 0
+  fi
+
+  local delete_count=$(( ${#all_releases[@]} - KEEP_RELEASES ))
+  local release_dir
+  local skip=false
+
+  for release_dir in "${all_releases[@]:0:delete_count}"; do
+    skip=false
+    for candidate in "${protected[@]}"; do
+      if [[ "$release_dir" == "$candidate" ]]; then
+        skip=true
+        break
+      fi
+    done
+    if [[ "$skip" == "true" ]]; then
+      continue
+    fi
+    rm -rf "$release_dir"
+  done
+}
+
+validate_mode
+BACKEND_STABLE_BASE_URL="$(normalize_base_url "$BACKEND_STABLE_BASE_URL")"
+
+mkdir -p "$LOG_DIR" "$APP_ROOT/releases" "$APP_ROOT/backups/sqlite" "$APP_ROOT/data" "$BACKEND_SLOT_ROOT" "$(dirname "$BACKEND_ACTIVE_SLOT_STATE_PATH")"
+touch "$LOG_DIR/update.log"
+exec >>"$LOG_DIR/update.log" 2>&1
+
+log "starting release activation: $RELEASE_ID mode=$DEPLOY_MODE"
 
 if [[ ! -d "$RELEASE_DIR" ]]; then
   echo "release directory not found: $RELEASE_DIR" >&2
@@ -233,6 +498,13 @@ fi
 
 RELEASE_GIT_SHA="$(read_release_meta_field git_sha)"
 RELEASE_BUILT_AT="$(read_release_meta_field built_at)"
+CURRENT_BACKEND_SLOT="$(active_backend_slot)"
+TARGET_BACKEND_SLOT="$(inactive_backend_slot "$CURRENT_BACKEND_SLOT")"
+
+ensure_backend_slot_env blue
+ensure_backend_slot_env green
+TARGET_BACKEND_PORT="$(slot_port_for "$TARGET_BACKEND_SLOT")"
+PREVIOUS_BACKEND_PORT="$(slot_port_for "$CURRENT_BACKEND_SLOT")"
 
 LAST_FAILED_STEP="install backend dependencies"
 cd "$APP_ROOT"
@@ -241,49 +513,81 @@ LAST_COMPLETED_STEP="install backend dependencies"
 LAST_FAILED_STEP=""
 log "step:ok install backend dependencies"
 
-LAST_FAILED_STEP="build frontend"
-cd "$RELEASE_DIR/frontend"
-set -a
-. "$FRONTEND_ENV"
-set +a
-npm ci --include=dev
-npm run build
-LAST_COMPLETED_STEP="build frontend"
+if [[ "$DEPLOY_MODE" == "full" ]]; then
+  LAST_FAILED_STEP="build frontend"
+  cd "$RELEASE_DIR/frontend"
+  set -a
+  . "$FRONTEND_ENV"
+  set +a
+  npm ci --include=dev
+  npm run build
+  LAST_COMPLETED_STEP="build frontend"
+  LAST_FAILED_STEP=""
+  log "step:ok build frontend"
+fi
+
+if [[ -n "$CURRENT_BEFORE" ]] && ! sudo systemctl is-active --quiet "personal-api-admin-backend@${CURRENT_BACKEND_SLOT}"; then
+  LAST_FAILED_STEP="bootstrap current backend slot"
+  ensure_slot_runtime "$CURRENT_BACKEND_SLOT" "$CURRENT_BEFORE"
+  LAST_COMPLETED_STEP="bootstrap current backend slot"
+  LAST_FAILED_STEP=""
+  log "step:ok bootstrap current backend slot"
+fi
+
+LAST_FAILED_STEP="prepare target backend slot"
+release_meta_json_set "backend_slot" "$TARGET_BACKEND_SLOT"
+ensure_slot_link "$TARGET_BACKEND_SLOT" "$RELEASE_DIR"
+LAST_COMPLETED_STEP="prepare target backend slot"
 LAST_FAILED_STEP=""
-log "step:ok build frontend"
+log "step:ok prepare target backend slot"
+
+LAST_FAILED_STEP="restart target backend slot"
+sudo systemctl restart "personal-api-admin-backend@${TARGET_BACKEND_SLOT}"
+LAST_COMPLETED_STEP="restart target backend slot"
+LAST_FAILED_STEP=""
+log "step:ok restart target backend slot"
+
+verify_with_retry "target backend healthz" 30 1 check_backend_healthz_url "http://127.0.0.1:${TARGET_BACKEND_PORT}"
+verify_with_retry "target backend version" 30 1 check_backend_version_url "http://127.0.0.1:${TARGET_BACKEND_PORT}"
+
+LAST_FAILED_STEP="switch backend upstream"
+write_backend_upstream_conf "$TARGET_BACKEND_SLOT" "$TARGET_BACKEND_PORT"
+sudo nginx -t
+sudo systemctl reload nginx
+record_active_backend_slot "$TARGET_BACKEND_SLOT"
+BACKEND_SWITCH_APPLIED=true
+LAST_COMPLETED_STEP="switch backend upstream"
+LAST_FAILED_STEP=""
+log "step:ok switch backend upstream"
+
+verify_with_retry "stable backend healthz" 30 1 check_backend_healthz_url "$BACKEND_STABLE_BASE_URL"
+verify_with_retry "stable backend version" 30 1 check_backend_version_url "$BACKEND_STABLE_BASE_URL"
 
 ln -sfn "$RELEASE_DIR" "$CURRENT_LINK"
 LAST_COMPLETED_STEP="switch current symlink"
 log "step:ok switch current symlink"
 
-LAST_FAILED_STEP="restart backend"
-sudo systemctl restart personal-api-admin-backend
-LAST_COMPLETED_STEP="restart backend"
-LAST_FAILED_STEP=""
-log "step:ok restart backend"
+if [[ "$DEPLOY_MODE" == "full" ]]; then
+  LAST_FAILED_STEP="restart frontend"
+  sudo systemctl restart personal-api-admin-frontend
+  LAST_COMPLETED_STEP="restart frontend"
+  LAST_FAILED_STEP=""
+  log "step:ok restart frontend"
 
-verify_with_retry "backend healthz" 30 1 check_backend_healthz
-verify_with_retry "backend version" 30 1 check_backend_version
+  verify_with_retry "frontend login" 30 1 check_frontend_login
 
-LAST_FAILED_STEP="restart frontend"
-sudo systemctl restart personal-api-admin-frontend
-LAST_COMPLETED_STEP="restart frontend"
-LAST_FAILED_STEP=""
-log "step:ok restart frontend"
+  LAST_FAILED_STEP="restart market_api"
+  sudo systemctl restart personal-market-api
+  LAST_COMPLETED_STEP="restart market_api"
+  LAST_FAILED_STEP=""
+  log "step:ok restart market_api"
 
-verify_with_retry "frontend login" 30 1 check_frontend_login
+  verify_with_retry "market_api healthz" 30 1 check_market_api_healthz
+  run_n8n_verification
+fi
 
-LAST_FAILED_STEP="restart market_api"
-sudo systemctl restart personal-market-api
-LAST_COMPLETED_STEP="restart market_api"
-LAST_FAILED_STEP=""
-log "step:ok restart market_api"
-
-verify_with_retry "market_api healthz" 30 1 check_market_api_healthz
-run_n8n_verification
-
-find "$APP_ROOT/releases" -mindepth 1 -maxdepth 1 -type d | sort | head -n -"${KEEP_RELEASES}" | xargs -r rm -rf
+cleanup_old_releases
 
 LAST_COMPLETED_STEP="cleanup old releases"
 log "step:ok cleanup old releases"
-log "release activated: $RELEASE_ID"
+log "release activated: $RELEASE_ID mode=$DEPLOY_MODE backend_slot=$TARGET_BACKEND_SLOT"

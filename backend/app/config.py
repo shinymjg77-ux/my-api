@@ -42,7 +42,8 @@ class Settings(BaseSettings):
     managed_api_admin_base_url: str = "http://127.0.0.1:8000"
     managed_api_market_base_url: str = "http://127.0.0.1:8100"
     ops_systemd_units: str = (
-        "personal-api-admin-backend.service,"
+        "personal-api-admin-backend@blue.service,"
+        "personal-api-admin-backend@green.service,"
         "personal-api-admin-frontend.service,"
         "personal-market-api.service,"
         "nginx.service"

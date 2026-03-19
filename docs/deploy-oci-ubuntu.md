@@ -3,7 +3,8 @@
 이 문서는 이 프로젝트를 `OCI Ubuntu` 서버에 배포하는 실제 절차를 정리한 문서다. 예시 도메인은 `admin.example.com` 이고, 구성은 아래와 같다.
 
 - `Nginx`: 외부 진입점, HTTPS 종료, 리버스 프록시
-- `FastAPI`: `127.0.0.1:8000`
+- `FastAPI 안정 주소`: `127.0.0.1:9000`
+- `FastAPI 슬롯`: `127.0.0.1:8001` (`blue`), `127.0.0.1:8002` (`green`)
 - `Next.js`: `127.0.0.1:3000`
 - `market_api`: `127.0.0.1:8100` 또는 서버 private IP `:8100`, 내부 전용
 - `systemd`: 백엔드/프론트엔드 프로세스 관리
@@ -93,7 +94,7 @@ BOOTSTRAP_ADMIN_PASSWORD=change-this-now
 DASHBOARD_WINDOW_DAYS=7
 LOG_PAGE_SIZE_DEFAULT=20
 LOG_PAGE_SIZE_MAX=100
-MANAGED_API_ADMIN_BASE_URL=https://admin.example.com
+MANAGED_API_ADMIN_BASE_URL=http://127.0.0.1:9000
 MANAGED_API_MARKET_BASE_URL=http://127.0.0.1:8100
 ```
 
@@ -138,9 +139,11 @@ sudo nano /etc/my-api/frontend.env
 NODE_ENV=production
 PORT=3000
 HOSTNAME=127.0.0.1
-BACKEND_BASE_URL=http://127.0.0.1:8000
+BACKEND_BASE_URL=http://127.0.0.1:9000
 BACKEND_API_PREFIX=/api/v1
 ```
+
+운영에서는 프런트가 단일 백엔드 포트에 직접 붙지 않고, Nginx 내부 안정 주소 `http://127.0.0.1:9000` 을 보게 한다.
 
 ## 4-1. 시장 신호 API 환경변수 설정
 
@@ -366,21 +369,24 @@ getaddrinfo EAIAGAIN ansan-jarvis.duckdns.org
 
 예시 유닛 파일은 저장소의 아래 파일을 사용한다.
 
-- [deploy/systemd/personal-api-admin-backend.service](../deploy/systemd/personal-api-admin-backend.service)
+- [deploy/systemd/personal-api-admin-backend@.service](../deploy/systemd/personal-api-admin-backend@.service)
 - [deploy/systemd/personal-api-admin-frontend.service](../deploy/systemd/personal-api-admin-frontend.service)
 - [deploy/systemd/personal-market-api.service](../deploy/systemd/personal-market-api.service)
 
 서버에 복사:
 
 ```bash
-sudo cp /srv/my-api/deploy/systemd/personal-api-admin-backend.service /etc/systemd/system/
+sudo mkdir -p /etc/my-api/backend-slots
+printf 'BACKEND_SLOT_PORT=8001\n' | sudo tee /etc/my-api/backend-slots/blue.env >/dev/null
+printf 'BACKEND_SLOT_PORT=8002\n' | sudo tee /etc/my-api/backend-slots/green.env >/dev/null
+sudo cp /srv/my-api/deploy/systemd/personal-api-admin-backend@.service /etc/systemd/system/
 sudo cp /srv/my-api/deploy/systemd/personal-api-admin-frontend.service /etc/systemd/system/
 sudo cp /srv/my-api/deploy/systemd/personal-market-api.service /etc/systemd/system/
 sudo systemctl daemon-reload
-sudo systemctl enable personal-api-admin-backend
+sudo systemctl enable personal-api-admin-backend@blue
+sudo systemctl enable personal-api-admin-backend@green
 sudo systemctl enable personal-api-admin-frontend
 sudo systemctl enable personal-market-api
-sudo systemctl start personal-api-admin-backend
 sudo systemctl start personal-api-admin-frontend
 sudo systemctl start personal-market-api
 ```
@@ -388,7 +394,8 @@ sudo systemctl start personal-market-api
 상태 확인:
 
 ```bash
-sudo systemctl status personal-api-admin-backend --no-pager
+sudo systemctl status personal-api-admin-backend@blue --no-pager
+sudo systemctl status personal-api-admin-backend@green --no-pager
 sudo systemctl status personal-api-admin-frontend --no-pager
 sudo systemctl status personal-market-api --no-pager
 ```
@@ -396,20 +403,25 @@ sudo systemctl status personal-market-api --no-pager
 로그 확인:
 
 ```bash
-sudo journalctl -u personal-api-admin-backend -n 100 --no-pager
+sudo journalctl -u personal-api-admin-backend@blue -n 100 --no-pager
+sudo journalctl -u personal-api-admin-backend@green -n 100 --no-pager
 sudo journalctl -u personal-api-admin-frontend -n 100 --no-pager
 sudo journalctl -u personal-market-api -n 100 --no-pager
 ```
 
 ## 8. Nginx 설정
 
-예시 설정 파일은 [deploy/nginx/site.conf.example](../deploy/nginx/site.conf.example) 이다.
+예시 설정 파일은 아래 두 파일을 같이 쓴다.
+
+- [deploy/nginx/site.conf.example](../deploy/nginx/site.conf.example)
+- [deploy/nginx/my-api-backend-upstream.conf.example](../deploy/nginx/my-api-backend-upstream.conf.example)
 
 서버에 복사:
 
 ```bash
 sudo mkdir -p /var/www/certbot
 sudo cp /srv/my-api/deploy/nginx/site.conf.example /etc/nginx/sites-available/admin.example.com
+sudo cp /srv/my-api/deploy/nginx/my-api-backend-upstream.conf.example /etc/nginx/conf.d/my-api-backend-upstream.conf
 sudo ln -sf /etc/nginx/sites-available/admin.example.com /etc/nginx/sites-enabled/admin.example.com
 sudo nginx -t
 sudo systemctl reload nginx
@@ -453,6 +465,8 @@ sudo ufw status
 curl -I https://admin.example.com/login
 curl https://admin.example.com/healthz
 curl https://admin.example.com/version
+curl http://127.0.0.1:9000/healthz
+curl http://127.0.0.1:9000/version
 ```
 
 브라우저 확인 항목:
@@ -488,27 +502,10 @@ docker exec n8n node -e '(async()=>{try{const r=await fetch("https://ansan-jarvi
 
 ## 11. 업데이트 배포 절차
 
-코드 업데이트 시에는 아래 순서가 안전하다.
+권장 배포 절차는 서버 쪽 스크립트를 SSH로 트리거하는 방식이다.
 
 ```bash
-cd /srv/my-api
-git pull origin main
-
-source /srv/my-api/.venv/bin/activate
-pip install -r /srv/my-api/backend/requirements.txt
-pip install -r /srv/my-api/services/market_api/requirements.txt
-
-cd /srv/my-api/frontend
-npm ci
-set -a
-source /etc/my-api/frontend.env
-set +a
-npm run build
-
-sudo systemctl restart personal-api-admin-backend
-sudo systemctl restart personal-api-admin-frontend
-sudo systemctl restart personal-market-api
-sudo systemctl reload nginx
+./scripts/deploy_from_server.sh your-ssh-host-alias origin/main full
 ```
 
 서버 중심 반자동 배포를 쓰려면 서버에 읽기 전용 저장소 미러를 한 번 준비한다.
@@ -526,10 +523,15 @@ sudo chmod 640 /etc/my-api/ops.env /etc/my-api/n8n.env
 이후 표준 배포 명령은 아래처럼 서버 쪽 스크립트를 SSH로 트리거하는 방식이다.
 
 ```bash
-./scripts/deploy_from_server.sh your-ssh-host-alias origin/main
+./scripts/deploy_from_server.sh your-ssh-host-alias origin/main full
 ```
 
 서버는 `/srv/my-api/repo` 에서 ref를 fetch 한 뒤 새 release를 만들고, `n8n` compose 동기화와 앱 활성화를 스스로 수행한다.
+백엔드만 먼저 무중단에 가깝게 교체하려면 아래처럼 `backend` 모드를 쓴다.
+
+```bash
+./scripts/deploy_from_server.sh your-ssh-host-alias origin/main backend
+```
 
 ## 12. 실패 가능 지점
 
@@ -643,17 +645,18 @@ sudo systemctl daemon-reload
 
 구조:
 
-- 새 코드 업로드: `/srv/my-api/releases/<timestamp>`
-- 사전 빌드 완료 후 `current` 심볼릭 링크 전환
-- `backend` 헬스체크 후 `frontend` 재시작
-- 오래된 릴리스는 최근 5개만 유지
+- 새 코드 준비: `/srv/my-api/releases/<timestamp>`
+- 백엔드는 `blue`, `green` 슬롯 중 유휴 슬롯에 먼저 기동
+- 슬롯 직접 헬스체크와 `/version` 검증 후 Nginx upstream 전환
+- `full` 모드에서만 `current` 전환 뒤 `frontend`, `market_api` 를 순차 재시작
+- 오래된 릴리스는 최근 5개만 유지하되, `current` 와 슬롯이 가리키는 release 는 보존
 
 실행 예시:
 
 ```bash
 cd /path/to/your/local/my-api
-chmod +x scripts/deploy_release.sh scripts/remote_activate_release.sh
-./scripts/deploy_release.sh your-ssh-host-alias
+chmod +x scripts/deploy_from_server.sh scripts/server_prepare_release.sh scripts/remote_activate_release.sh
+./scripts/deploy_from_server.sh your-ssh-host-alias origin/main full
 ```
 
 배포가 끝나면 서버의 `/srv/my-api/current/.release-meta.json` 과 `https://admin.example.com/version` 이 같은 `git_sha`, `release_id`, `built_at` 를 보여야 한다.
@@ -666,8 +669,9 @@ chmod +x scripts/deploy_release.sh scripts/remote_activate_release.sh
 
 주의:
 
-- 이 방식은 단일 `uvicorn` 프로세스를 재시작하므로 백엔드 전환 시 수초 수준의 짧은 끊김은 남는다.
-- 프런트 빌드와 의존성 설치는 전환 전에 끝내므로 체감 중단은 최소화한다.
+- 백엔드는 안정 주소 `127.0.0.1:9000` 뒤에서 슬롯 전환되므로 일반적인 배포에서는 짧은 재기동 없이 교체된다.
+- 프런트엔드는 아직 단일 `3000` 인스턴스 구조라 `full` 배포 시 재시작이 남는다.
+- 첫 dual-slot 도입 시에는 `full` 모드로 한 번 반영하고, 이후 백엔드 단독 변경은 `backend` 모드를 쓰는 편이 안전하다.
 
 ## 17. 드리프트 감시 타이머
 
@@ -702,4 +706,4 @@ sudo systemctl enable --now my-api-drift-check.timer
 
 핵심 방향:
 
-- 현재의 짧은 재시작 방식에서 blue-green 전환 기반 무중단에 가까운 배포로 확장하기
+- 다음 단계는 프런트엔드까지 blue-green 전환 기반으로 확장하기

@@ -1,0 +1,1 @@
+set $my_api_backend http://127.0.0.1:8001;

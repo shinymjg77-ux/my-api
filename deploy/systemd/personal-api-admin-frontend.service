@@ -1,7 +1,6 @@
 [Unit]
 Description=Personal API Admin Frontend
-After=network.target personal-api-admin-backend.service
-Requires=personal-api-admin-backend.service
+After=network.target nginx.service
 OnFailure=my-api-alert@%p.service
 
 [Service]

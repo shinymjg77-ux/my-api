@@ -8,6 +8,7 @@ APP_ROOT="${APP_ROOT:-/srv/my-api}"
 REPO_DIR="${RELEASE_REPO_DIR:-$REPO_ROOT}"
 N8N_COMPOSE_PATH="${N8N_COMPOSE_PATH:-/opt/n8n/docker-compose.yml}"
 TARGET_REF="${1:-origin/main}"
+DEPLOY_MODE="${2:-${DEPLOY_MODE:-full}}"
 RELEASE_ID="${RELEASE_ID:-$(date -u +%Y%m%dT%H%M%SZ)}"
 RELEASE_DIR="$APP_ROOT/releases/$RELEASE_ID"
 RELEASE_META_FILE="$RELEASE_DIR/.release-meta.json"
@@ -72,7 +73,16 @@ meta_path.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
 PY
 }
 
-echo "[server-deploy] preparing ref=$TARGET_REF release=$RELEASE_ID repo=$REPO_DIR"
+case "$DEPLOY_MODE" in
+  full|backend)
+    ;;
+  *)
+    echo "unsupported deploy mode: $DEPLOY_MODE" >&2
+    exit 1
+    ;;
+esac
+
+echo "[server-deploy] preparing ref=$TARGET_REF release=$RELEASE_ID mode=$DEPLOY_MODE repo=$REPO_DIR"
 
 ensure_repo_checkout
 git -C "$REPO_DIR" fetch --prune origin
@@ -101,6 +111,6 @@ print(hashlib.sha256(path.read_bytes()).hexdigest())
 PY
 )"
 update_release_meta_n8n_hash "$N8N_COMPOSE_SHA256"
-bash "$RELEASE_DIR/scripts/remote_activate_release.sh" "$RELEASE_ID"
+bash "$RELEASE_DIR/scripts/remote_activate_release.sh" "$RELEASE_ID" "$DEPLOY_MODE"
 
-echo "[server-deploy] activated release=$RELEASE_ID git_sha=$COMMIT_SHA"
+echo "[server-deploy] activated release=$RELEASE_ID mode=$DEPLOY_MODE git_sha=$COMMIT_SHA"
