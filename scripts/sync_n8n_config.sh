@@ -80,7 +80,7 @@ if [[ "$DNS_JSON" == "null" || "$DNS_JSON" == "[]" ]]; then
 fi
 
 ENV_LINES="$(sudo docker inspect "$N8N_CONTAINER_NAME" --format '{{range .Config.Env}}{{println .}}{{end}}')"
-for required_prefix in "N8N_HOST=" "N8N_PROTOCOL=" "WEBHOOK_URL="; do
+for required_prefix in "N8N_PORT=" "N8N_PROTOCOL=" "N8N_EDITOR_BASE_URL="; do
   if ! grep -q "^${required_prefix}" <<<"$ENV_LINES"; then
     echo "n8n container missing env: $required_prefix" >&2
     exit 1
