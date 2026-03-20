@@ -233,7 +233,8 @@ services:
 
 - DuckDNS 도메인을 `/etc/hosts` 나 `extra_hosts` 로 고정 IP 매핑하지 않는다.
 - DuckDNS 는 공인 IP가 바뀔 수 있으므로, 정적 매핑은 더 큰 장애를 만들 수 있다.
-- `Ops alert` 의 호출 대상 URL은 계속 `https://ansan-jarvis.duckdns.org/api/proxy/jobs/ops-check` 를 사용한다.
+- `Ops alert` 는 공개 DuckDNS 경로 대신 서버 공인 IP의 `http://<server-public-ip>/n8n-internal/...` 경로를 사용한다.
+- 이 경로는 DNS를 거치지 않지만, Nginx `allow`/`deny` 로 같은 서버의 자기 호출만 허용해야 한다.
 
 ## 5. 백엔드 빌드 및 실행 준비
 
@@ -350,18 +351,29 @@ curl -X POST -H "X-Job-Secret: <JOB_SHARED_SECRET>" "http://${MARKET_API_BIND_HO
 ```bash
 curl -H "X-Job-Secret: <JOB_SHARED_SECRET>" "http://127.0.0.1:8000/api/v1/jobs/ops-check"
 curl -H "X-Job-Secret: <JOB_SHARED_SECRET>" "https://admin.example.com/api/proxy/jobs/ops-check"
+curl -H "X-Job-Secret: <JOB_SHARED_SECRET>" "http://<server-public-ip>/n8n-internal/jobs/ops-check"
 ```
 
-현재 운영에서는 `n8n`이 관리자 프론트의 `/api/proxy/jobs/ops-check` 를 호출하고, Next.js 프록시가 `X-Job-Secret` 헤더를 백엔드로 그대로 전달한다.
+현재 운영에서는 브라우저/수동 점검은 공개 경로 `/api/proxy/jobs/ops-check` 를 계속 사용할 수 있지만, `Ops alert` 는 `n8n -> http://<server-public-ip>/n8n-internal/jobs/ops-check -> stable backend 9000` 경로를 사용한다.
 
 `Ops alert` 워크플로우 권장값:
 
-- 요청 URL: `GET https://ansan-jarvis.duckdns.org/api/proxy/jobs/ops-check`
+- 템플릿: [deploy/n8n/workflows/ops-alert.json](../deploy/n8n/workflows/ops-alert.json)
+- 요청 URL: `GET http://<server-public-ip>/n8n-internal/jobs/ops-check`
 - 헤더: `X-Job-Secret: <JOB_SHARED_SECRET>`
 - 요청 타임아웃: `10초`
 - 재시도 횟수: `3회`
 - 시도 간 대기: `5초`
-- 실패 텔레그램 발송 조건: 모든 재시도 실패 후 1회만 발송
+- 경로 이상 텔레그램 발송 조건: 모든 재시도 실패가 `2회 연속`일 때 1회만 발송
+- 경로 복구 텔레그램 발송 조건: 직전 경로 이상 알림이 있었고 다음 성공 응답이 들어왔을 때 1회만 발송
+- 상태 변화 텔레그램 발송 조건: `changed=true` 인 실제 운영 상태 변화일 때만 발송
+
+`Ops alert` 템플릿 import 전 아래 placeholder를 실제 값으로 치환한다.
+
+- `__OPS_INTERNAL_BASE_URL__`
+- `__JOB_SHARED_SECRET__`
+- `__OPS_ALERT_CHAT_ID__`
+- `__N8N_TELEGRAM_CREDENTIAL_ID__`
 
 조회 전용 텔레그램 운영 명령 템플릿:
 
@@ -530,12 +542,12 @@ curl http://127.0.0.1:9000/version
 - `My workflow`: 미국 증시 브리핑 + QLD RSI 발송
 - `Ops alert`: 10분 주기 운영 이상 감지 알림
 
-`n8n` 컨테이너 DNS 점검:
+`n8n` 내부 점검 경로 확인:
 
 ```bash
 docker exec n8n sh -lc 'cat /etc/resolv.conf'
-docker exec n8n node -e 'require("dns").lookup("ansan-jarvis.duckdns.org", console.log)'
-docker exec n8n node -e '(async()=>{try{const r=await fetch("https://ansan-jarvis.duckdns.org/api/proxy/jobs/ops-check",{headers:{"X-Job-Secret":"<JOB_SHARED_SECRET>"}});console.log(r.status, await r.text())}catch(e){console.log(e.message)}})()'
+docker exec n8n node -e '(async()=>{try{const r=await fetch("http://<server-public-ip>/n8n-internal/healthz");console.log(r.status, await r.text())}catch(e){console.log(e.message)}})()'
+docker exec n8n node -e '(async()=>{try{const r=await fetch("http://<server-public-ip>/n8n-internal/jobs/ops-check",{headers:{"X-Job-Secret":"<JOB_SHARED_SECRET>"}});console.log(r.status, await r.text())}catch(e){console.log(e.message)}})()'
 ```
 
 반복 점검이 필요하면 [scripts/check_n8n_dns.sh](../scripts/check_n8n_dns.sh) 를 서버에 복사해서 사용할 수 있다.
@@ -569,8 +581,10 @@ sudo chmod 640 /etc/my-api/ops.env /etc/my-api/n8n.env
 
 ```env
 OPS_PUBLIC_BASE_URL=https://admin.example.com
+OPS_INTERNAL_BASE_URL=http://<server-public-ip>/n8n-internal
 OPS_COMMAND_SHARED_SECRET=replace-with-the-same-backend-ops-command-secret
 OPS_COMMAND_ALLOWED_CHAT_IDS=123456789
+OPS_ALERT_CHAT_ID=123456789
 N8N_TELEGRAM_CREDENTIAL_ID=replace-with-existing-telegram-credential-id
 WEBHOOK_URL=https://admin.example.com/
 ```
@@ -599,8 +613,8 @@ WEBHOOK_URL=https://admin.example.com/
 - `market-api.env` 권한이 너무 넓으면 운영 보안상 좋지 않다.
 - SQLite 파일 경로의 상위 디렉터리가 없거나 권한이 없으면 백엔드 초기화가 실패한다.
 - `market_api` 는 내부 서비스이므로 Nginx에 공개 라우팅을 추가하지 않는다.
-- `n8n` 컨테이너 DNS가 불안정하면 `getaddrinfo EAIAGAIN ansan-jarvis.duckdns.org` 로 운영 상태 조회가 실패할 수 있다.
-- `Ops alert` 에 재시도가 없으면 일시적인 DNS 실패만으로 텔레그램 장애 알림이 발송될 수 있다.
+- `n8n-internal` HTTP 경로에 `allow`/`deny` 를 안 걸면 운영 백엔드 잡 엔드포인트가 불필요하게 노출된다.
+- `Ops alert` 에 연속 실패 완충이 없으면 내부 ingress 의 일시 실패만으로도 텔레그램 경보 피로가 생길 수 있다.
 
 ## 13. SQLite 백업 cron
 

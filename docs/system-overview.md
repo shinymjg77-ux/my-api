@@ -28,8 +28,9 @@ flowchart LR
     Nginx --> Market[market_api\n127.0.0.1:8100]
     BackBlue --> SQLite[(SQLite\n/srv/my-api/data/app.db)]
     BackGreen --> SQLite
-    n8n[n8n Container] --> HTTPS
+    n8n[n8n Container] --> InternalIngress[Nginx n8n-only HTTP Path\n/public-ip/n8n-internal]
     n8n --> Market
+    InternalIngress --> StableBackend
 ```
 
 핵심은 백엔드와 프런트엔드가 모두 단일 런타임 포트를 직접 노출하지 않는다는 점이다.  
@@ -68,18 +69,15 @@ sequenceDiagram
 ```mermaid
 sequenceDiagram
     participant N8N as n8n
-    participant NG as Public Nginx
-    participant FF as Active Frontend Slot
+    participant NG as Nginx n8n-only HTTP Path
     participant SB as Stable Backend 9000
     participant BB as Active Backend Slot
 
-    N8N->>NG: HTTPS /api/proxy/jobs/ops-check
-    NG->>FF: Next.js route handler
-    FF->>SB: backend /api/v1/jobs/ops-check
+    N8N->>NG: HTTP /n8n-internal/jobs/ops-check
+    NG->>SB: backend /api/v1/jobs/ops-check
     SB->>BB: 활성 슬롯 전달
     BB-->>SB: 결과 반환
-    SB-->>FF: JSON 응답
-    FF-->>NG: 응답 전달
+    SB-->>NG: JSON 응답
     NG-->>N8N: 최종 응답
 ```
 

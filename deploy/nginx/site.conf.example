@@ -47,6 +47,22 @@ server {
         root /var/www/certbot;
     }
 
+    location = /n8n-internal/healthz {
+        allow 127.0.0.1;
+        allow 203.0.113.10;
+        deny all;
+        proxy_pass http://127.0.0.1:9000/healthz;
+        proxy_read_timeout 10s;
+    }
+
+    location = /n8n-internal/jobs/ops-check {
+        allow 127.0.0.1;
+        allow 203.0.113.10;
+        deny all;
+        proxy_pass http://127.0.0.1:9000/api/v1/jobs/ops-check;
+        proxy_read_timeout 15s;
+    }
+
     location / {
         return 301 https://$host$request_uri;
     }

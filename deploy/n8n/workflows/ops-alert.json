@@ -1,0 +1,155 @@
+[
+  {
+    "updatedAt": "2026-03-20T00:00:00.000Z",
+    "createdAt": "2026-03-20T00:00:00.000Z",
+    "id": "opsAlertWorkflow",
+    "name": "Ops alert",
+    "description": "Checks the backend ops endpoint through the internal Nginx ingress, suppresses transient transport failures, and sends Telegram alerts only for real state changes or repeated path failures.",
+    "active": true,
+    "isArchived": false,
+    "nodes": [
+      {
+        "parameters": {
+          "rule": {
+            "interval": [
+              {
+                "field": "minutes",
+                "minutesInterval": 10
+              }
+            ]
+          }
+        },
+        "type": "n8n-nodes-base.scheduleTrigger",
+        "typeVersion": 1.3,
+        "position": [
+          -640,
+          -128
+        ],
+        "id": "5c5e2d24-7649-470f-a835-61f545bd7f45",
+        "name": "Schedule Trigger",
+        "notesInFlow": false
+      },
+      {
+        "parameters": {
+          "method": "GET",
+          "url": "__OPS_INTERNAL_BASE_URL__/jobs/ops-check",
+          "sendHeaders": true,
+          "specifyHeaders": "keypair",
+          "headerParameters": {
+            "parameters": [
+              {
+                "name": "X-Job-Secret",
+                "value": "__JOB_SHARED_SECRET__"
+              }
+            ]
+          },
+          "options": {
+            "response": {
+              "response": {
+                "neverError": true,
+                "responseFormat": "json",
+                "outputPropertyName": "response"
+              }
+            },
+            "timeout": 10000
+          }
+        },
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.4,
+        "position": [
+          -400,
+          -128
+        ],
+        "id": "74ec5fdf-91f2-4b48-a552-734f68b2db38",
+        "name": "Run Ops Check",
+        "onError": "continueRegularOutput",
+        "retryOnFail": true,
+        "maxTries": 3,
+        "waitBetweenTries": 5000
+      },
+      {
+        "parameters": {
+          "jsCode": "const raw = items[0] ?? {};\nconst state = $getWorkflowStaticData('global');\nconst data = raw.json?.response ?? raw.json ?? {};\nconst error = raw.error ?? raw.json?.error ?? data?.error;\nconst failureThreshold = 2;\nconst checkUrl = '__OPS_INTERNAL_BASE_URL__/jobs/ops-check';\n\nfunction errorDetail() {\n  if (typeof error === 'string' && error) return error;\n  if (error?.message) return error.message;\n  if (raw.json?.message) return raw.json.message;\n  if (data?.message) return data.message;\n  return 'unexpected response';\n}\n\nfunction classifyTransport(detail) {\n  const text = String(detail ?? '');\n  if (/EAI_AGAIN|EAIAGAIN|ENOTFOUND|getaddrinfo/i.test(text)) return 'DNS lookup failed';\n  if (/ECONNREFUSED|ECONNRESET|fetch failed/i.test(text)) return 'Internal ingress unreachable';\n  if (/timed out|timeout/i.test(text)) return 'Ops check request timed out';\n  return 'Ops check request failed';\n}\n\nfunction escapeTelegramText(value) {\n  return String(value ?? '-').replace(/_/g, '\\\\_');\n}\n\nfunction formatKst(value) {\n  const date = value ? new Date(value) : new Date();\n  const formatter = new Intl.DateTimeFormat('en-CA', {\n    timeZone: 'Asia/Seoul',\n    year: 'numeric',\n    month: '2-digit',\n    day: '2-digit',\n    hour: '2-digit',\n    minute: '2-digit',\n    hour12: false,\n  });\n  const parts = Object.fromEntries(formatter.formatToParts(date).map((part) => [part.type, part.value]));\n  return `${parts.year}. ${parts.month}. ${parts.day}. ${parts.hour}:${parts.minute} KST`;\n}\n\nfunction transportFailureMessage(detail, streak) {\n  return [\n    '운영 상태 확인 경로 이상',\n    `시각: ${formatKst()}`,\n    `경로: ${checkUrl}`,\n    `연속실패: ${streak}회`,\n    `요약: ${classifyTransport(detail)}`,\n    detail,\n  ].join('\\n');\n}\n\nfunction transportRecoveryMessage() {\n  return [\n    '운영 상태 확인 경로 복구',\n    `시각: ${formatKst()}`,\n    `경로: ${checkUrl}`,\n    '요약: 내부 점검 경로 응답이 다시 정상화되었습니다.',\n  ].join('\\n');\n}\n\nfunction statusChangeMessage(check) {\n  const issues = Array.isArray(check.issues) ? check.issues.slice(0, 5) : [];\n  const generatedAt = formatKst(check.generated_at);\n  const lines = [];\n\n  if (check.overall_status === 'healthy') {\n    lines.push('운영 상태 복구');\n    lines.push(`시각: ${generatedAt}`);\n    lines.push(`이전상태: ${escapeTelegramText(check.previous_overall_status ?? '-')}`);\n    lines.push('현재상태: healthy');\n    lines.push('요약: 모든 추적 대상이 정상 상태로 돌아왔습니다.');\n    return lines.join('\\n');\n  }\n\n  const statusLabel = check.overall_status === 'critical' ? 'CRITICAL' : 'WARNING';\n  lines.push('운영 이상 감지');\n  lines.push(`시각: ${generatedAt}`);\n  lines.push(`상태: ${statusLabel}`);\n  lines.push(`이전상태: ${escapeTelegramText(check.previous_overall_status ?? '-')}`);\n  lines.push(`요약: ${escapeTelegramText(check.summary ?? '-')}`);\n  for (const issue of issues) {\n    const sourceType = escapeTelegramText(issue.source_type ?? 'unknown');\n    const sourceName = escapeTelegramText(issue.source_name ?? 'unknown');\n    const message = escapeTelegramText(issue.message ?? '-');\n    lines.push(`- [${sourceType}] ${sourceName}: ${message}`);\n  }\n  return lines.join('\\n');\n}\n\nif (error || typeof data?.changed === 'undefined' || typeof data?.overall_status === 'undefined') {\n  const detail = errorDetail();\n  const streak = Number(state.transportFailureStreak ?? 0) + 1;\n  state.transportFailureStreak = streak;\n  if (streak < failureThreshold) {\n    return [];\n  }\n  if (state.transportFailureAlerted === true) {\n    return [];\n  }\n  state.transportFailureAlerted = true;\n  return [{ json: { message: transportFailureMessage(detail, streak) } }];\n}\n\nconst outputs = [];\nif (state.transportFailureAlerted === true) {\n  outputs.push({ json: { message: transportRecoveryMessage() } });\n}\nstate.transportFailureStreak = 0;\nstate.transportFailureAlerted = false;\n\nif (data.changed === true) {\n  outputs.push({ json: { message: statusChangeMessage(data) } });\n}\n\nreturn outputs;"
+        },
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          -160,
+          -128
+        ],
+        "id": "bf2e3f4f-26ad-49cc-9d2c-c16d5d0f4b49",
+        "name": "Build Ops Alert Message"
+      },
+      {
+        "parameters": {
+          "chatId": "__OPS_ALERT_CHAT_ID__",
+          "text": "={{$json.message}}",
+          "additionalFields": {}
+        },
+        "type": "n8n-nodes-base.telegram",
+        "typeVersion": 1.2,
+        "position": [
+          96,
+          -128
+        ],
+        "id": "0cd7f8e4-313c-44e3-b8aa-677e208e83d3",
+        "name": "Send Ops Alert",
+        "credentials": {
+          "telegramApi": {
+            "id": "__N8N_TELEGRAM_CREDENTIAL_ID__",
+            "name": "Telegram account"
+          }
+        }
+      }
+    ],
+    "connections": {
+      "Schedule Trigger": {
+        "main": [
+          [
+            {
+              "node": "Run Ops Check",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Run Ops Check": {
+        "main": [
+          [
+            {
+              "node": "Build Ops Alert Message",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Build Ops Alert Message": {
+        "main": [
+          [
+            {
+              "node": "Send Ops Alert",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      }
+    },
+    "settings": {
+      "executionOrder": "v1",
+      "binaryMode": "separate",
+      "availableInMCP": false
+    },
+    "staticData": {
+      "node:Schedule Trigger": {
+        "recurrenceRules": []
+      },
+      "global": {
+        "transportFailureStreak": 0,
+        "transportFailureAlerted": false
+      }
+    }
+  }
+]
