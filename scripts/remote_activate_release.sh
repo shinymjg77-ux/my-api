@@ -5,6 +5,7 @@ APP_ROOT="${APP_ROOT:-/srv/my-api}"
 OPS_ENV="${OPS_ENV:-/etc/my-api/ops.env}"
 FRONTEND_ENV="${FRONTEND_ENV:-/etc/my-api/frontend.env}"
 BACKEND_ENV="${BACKEND_ENV:-/etc/my-api/backend.env}"
+N8N_ENV="${N8N_ENV:-/etc/my-api/n8n.env}"
 RELEASE_ID="${1:?release id is required}"
 DEPLOY_MODE="${2:-${DEPLOY_MODE:-full}}"
 RELEASE_DIR="$APP_ROOT/releases/$RELEASE_ID"
@@ -32,6 +33,7 @@ if [[ -r "$OPS_ENV" ]]; then
   set -a
   . "$OPS_ENV"
   set +a
+  N8N_ENV="${N8N_ENV_FILE:-$N8N_ENV}"
   BACKEND_STABLE_BASE_URL="${BACKEND_STABLE_BASE_URL:-http://127.0.0.1:9000}"
   BACKEND_UPSTREAM_CONF="${BACKEND_UPSTREAM_CONF:-/etc/nginx/snippets/my-api-backend-upstream.conf}"
   BACKEND_ACTIVE_SLOT_STATE_PATH="${BACKEND_ACTIVE_SLOT_STATE_PATH:-$APP_ROOT/state/backend-active-slot}"
@@ -419,6 +421,38 @@ PY
   fi
 }
 
+load_n8n_runtime_env() {
+  if [[ -r "$N8N_ENV" ]]; then
+    set -a
+    . "$N8N_ENV"
+    set +a
+    return 0
+  fi
+
+  if sudo test -r "$N8N_ENV"; then
+    eval "$(
+      sudo python3 - <<'PY' "$N8N_ENV"
+import pathlib
+import shlex
+import sys
+
+env_path = pathlib.Path(sys.argv[1])
+values = {}
+for raw_line in env_path.read_text(encoding="utf-8").splitlines():
+    line = raw_line.strip()
+    if not line or line.startswith("#") or "=" not in line:
+        continue
+    key, value = line.split("=", 1)
+    if key in {"N8N_CONTAINER_NAME", "OPS_INTERNAL_BASE_URL"}:
+        values[key] = value
+
+for key, value in values.items():
+    print(f"export {key}={shlex.quote(value)}")
+PY
+    )"
+  fi
+}
+
 sync_managed_systemd_units() {
   local units=(
     "my-api-alert@.service"
@@ -680,6 +714,7 @@ run_n8n_verification() {
   local environment_name="production"
 
   load_backend_runtime_env
+  load_n8n_runtime_env
   environment_name="${ENVIRONMENT:-production}"
 
   set +e
