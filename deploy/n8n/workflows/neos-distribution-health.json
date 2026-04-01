@@ -1,0 +1,155 @@
+[
+  {
+    "updatedAt": "2026-04-01T00:00:00.000Z",
+    "createdAt": "2026-04-01T00:00:00.000Z",
+    "id": "neosDistributionHealth",
+    "name": "NEOS distribution health",
+    "description": "Checks the distribution-deadline-check endpoint every 10 minutes, alerts the ops Telegram channel after two consecutive failures, and sends a recovery message when the endpoint returns to normal.",
+    "active": true,
+    "isArchived": false,
+    "nodes": [
+      {
+        "parameters": {
+          "rule": {
+            "interval": [
+              {
+                "field": "minutes",
+                "minutesInterval": 10
+              }
+            ]
+          }
+        },
+        "type": "n8n-nodes-base.scheduleTrigger",
+        "typeVersion": 1.3,
+        "position": [
+          -640,
+          -128
+        ],
+        "id": "9dcce201-96a8-4c93-b98f-4eaf57f3af8a",
+        "name": "Schedule Trigger",
+        "notesInFlow": false
+      },
+      {
+        "parameters": {
+          "method": "POST",
+          "url": "__OPS_PUBLIC_BASE_URL__/internal/market-api/api/v1/jobs/distribution-deadline-check",
+          "sendHeaders": true,
+          "specifyHeaders": "keypair",
+          "headerParameters": {
+            "parameters": [
+              {
+                "name": "X-Job-Secret",
+                "value": "__JOB_SHARED_SECRET__"
+              }
+            ]
+          },
+          "options": {
+            "response": {
+              "response": {
+                "neverError": true,
+                "responseFormat": "json",
+                "outputPropertyName": "response"
+              }
+            },
+            "timeout": 10000
+          }
+        },
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.4,
+        "position": [
+          -400,
+          -128
+        ],
+        "id": "0be8c0df-9301-426c-885d-b22a1fbc78f2",
+        "name": "Run Distribution Health Check",
+        "onError": "continueRegularOutput",
+        "retryOnFail": true,
+        "maxTries": 3,
+        "waitBetweenTries": 5000
+      },
+      {
+        "parameters": {
+          "jsCode": "const raw = items[0] ?? {};\nconst state = $getWorkflowStaticData('global');\nconst payload = raw.json?.response ?? raw.json ?? {};\nconst error = raw.error ?? raw.json?.error ?? payload?.error;\nconst statusCode = Number(raw.json?.statusCode ?? payload?.statusCode ?? 0) || 0;\nconst failureThreshold = 2;\nconst checkUrl = '__OPS_PUBLIC_BASE_URL__/internal/market-api/api/v1/jobs/distribution-deadline-check';\n\nfunction formatKst(value) {\n  const date = value ? new Date(value) : new Date();\n  const formatter = new Intl.DateTimeFormat('en-CA', {\n    timeZone: 'Asia/Seoul',\n    year: 'numeric',\n    month: '2-digit',\n    day: '2-digit',\n    hour: '2-digit',\n    minute: '2-digit',\n    hour12: false,\n  });\n  const parts = Object.fromEntries(formatter.formatToParts(date).map((part) => [part.type, part.value]));\n  return `${parts.year}. ${parts.month}. ${parts.day}. ${parts.hour}:${parts.minute} KST`;\n}\n\nfunction errorDetail() {\n  if (typeof error === 'string' && error) return error;\n  if (error?.message) return error.message;\n  if (typeof payload?.detail === 'string' && payload.detail) return payload.detail;\n  if (typeof raw.json?.message === 'string' && raw.json.message) return raw.json.message;\n  if (typeof payload?.message === 'string' && payload.message) return payload.message;\n  return 'unexpected response';\n}\n\nfunction classifyFailure(detail) {\n  const text = String(detail ?? '');\n  if (/EAI_AGAIN|EAIAGAIN|ENOTFOUND|getaddrinfo/i.test(text)) return 'NEOS 일정 조회 DNS 실패';\n  if (/ECONNREFUSED|ECONNRESET|fetch failed/i.test(text)) return '배당 일정 조회 경로 연결 실패';\n  if (/timed out|timeout/i.test(text)) return '배당 일정 조회 요청 시간 초과';\n  if (/Failed to calculate distribution deadline signal/i.test(text)) return '배당 일정 계산 실패';\n  return '배당 일정 조회 실패';\n}\n\nfunction failureMessage(detail, streak) {\n  return [\n    '배당 일정 조회 실패',\n    `시각: ${formatKst()}`,\n    `경로: ${checkUrl}`,\n    `연속실패: ${streak}회`,\n    `요약: ${classifyFailure(detail)}`,\n    `세부: ${detail}`,\n  ].join('\\n');\n}\n\nfunction recoveryMessage() {\n  return [\n    '배당 일정 조회 복구',\n    `시각: ${formatKst()}`,\n    `경로: ${checkUrl}`,\n    '요약: 배당 일정 조회와 계산 응답이 다시 정상화되었습니다.',\n  ].join('\\n');\n}\n\nconst isFailure = Boolean(error)\n  || statusCode >= 500\n  || (typeof payload?.detail === 'string' && /Failed to calculate distribution deadline signal/i.test(payload.detail))\n  || !Array.isArray(payload?.funds);\n\nif (isFailure) {\n  const detail = errorDetail();\n  const streak = Number(state.transportFailureStreak ?? 0) + 1;\n  state.transportFailureStreak = streak;\n  if (streak < failureThreshold) {\n    return [];\n  }\n  if (state.transportFailureAlerted === true) {\n    return [];\n  }\n  state.transportFailureAlerted = true;\n  return [{\n    json: {\n      message: failureMessage(detail, streak),\n    },\n  }];\n}\n\nconst outputs = [];\nif (state.transportFailureAlerted === true) {\n  outputs.push({\n    json: {\n      message: recoveryMessage(),\n    },\n  });\n}\nstate.transportFailureStreak = 0;\nstate.transportFailureAlerted = false;\nreturn outputs;"
+        },
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          -160,
+          -128
+        ],
+        "id": "889d9fe2-8fc0-4a77-8df4-8f92b56b7a44",
+        "name": "Build Distribution Health Message"
+      },
+      {
+        "parameters": {
+          "chatId": "__OPS_ALERT_CHAT_ID__",
+          "text": "={{$json.message}}",
+          "additionalFields": {}
+        },
+        "type": "n8n-nodes-base.telegram",
+        "typeVersion": 1.2,
+        "position": [
+          96,
+          -128
+        ],
+        "id": "b8d65093-4d65-4d34-980f-3c1906dc9d7e",
+        "name": "Send Distribution Health Alert",
+        "credentials": {
+          "telegramApi": {
+            "id": "__N8N_TELEGRAM_CREDENTIAL_ID__",
+            "name": "Telegram account"
+          }
+        }
+      }
+    ],
+    "connections": {
+      "Schedule Trigger": {
+        "main": [
+          [
+            {
+              "node": "Run Distribution Health Check",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Run Distribution Health Check": {
+        "main": [
+          [
+            {
+              "node": "Build Distribution Health Message",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Build Distribution Health Message": {
+        "main": [
+          [
+            {
+              "node": "Send Distribution Health Alert",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      }
+    },
+    "settings": {
+      "executionOrder": "v1",
+      "binaryMode": "separate",
+      "availableInMCP": false
+    },
+    "staticData": {
+      "node:Schedule Trigger": {
+        "recurrenceRules": []
+      },
+      "global": {
+        "transportFailureStreak": 0,
+        "transportFailureAlerted": false
+      }
+    }
+  }
+]

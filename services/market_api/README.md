@@ -40,3 +40,11 @@ uvicorn app.main:app --reload --host 127.0.0.1 --port 8100
 - `alert_due`: 현재 실행 시점에 실제 알림을 보내야 하는지 여부
 
 운영에서는 `distribution_deadline_states.last_alert_key` 로 중복 발송을 막고, `distribution_deadline_alerts` 에 발송 이력을 남깁니다.
+
+배당 알림 workflow 와 별도 health workflow 가 이 endpoint 를 함께 사용합니다.
+
+- `neos-distribution-deadline.json`: `05:30 KST` 배당 알림 전용
+- `neos-distribution-health.json`: `10분`마다 호출해 endpoint 장애를 감시
+- HTTP 5xx, transport error, 비정상 payload 는 조회 실패로 간주
+- `2회 연속 실패` 시 운영 텔레그램 채널로 1회 알림, 정상 응답 복귀 시 복구 메시지 1회 발송
+- 정상 응답이면서 `alert_due=false` 인 경우는 장애가 아니라 단순 무알림 상태입니다

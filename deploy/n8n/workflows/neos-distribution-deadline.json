@@ -4,7 +4,7 @@
     "createdAt": "2026-04-01T00:00:00.000Z",
     "id": "neosDistributionDeadline",
     "name": "NEOS distribution deadline",
-    "description": "Runs every day at 05:30 KST, checks whether today is the Korean morning of the final actionable buying day for the next XQQI or QQQI distribution, and sends one Telegram message per due symbol.",
+    "description": "Runs every day at 05:30 KST and sends one Telegram message per due XQQI or QQQI distribution alert.",
     "active": true,
     "isArchived": false,
     "nodes": [
@@ -63,11 +63,14 @@
         ],
         "id": "65f7ec0f-8fca-4f4a-ac99-617af64ff4b8",
         "name": "Run Distribution Deadline Check",
-        "onError": "continueRegularOutput"
+        "onError": "continueRegularOutput",
+        "retryOnFail": true,
+        "maxTries": 3,
+        "waitBetweenTries": 5000
       },
       {
         "parameters": {
-          "jsCode": "const raw = items[0] ?? {};\nconst payload = raw.json?.response ?? raw.json ?? {};\nconst funds = Array.isArray(payload.funds) ? payload.funds : [];\nconst outputs = [];\n\nfor (const fund of funds) {\n  if (fund?.alert_due !== true) {\n    continue;\n  }\n  const amount = typeof fund.distribution_amount === 'number'\n    ? `$${fund.distribution_amount.toFixed(4)}`\n    : '미공시';\n  outputs.push({\n    json: {\n      symbol: fund.symbol,\n      message: `${fund.symbol} 오늘 밤 미국장 마감 전까지 매수 필요\\n주당 분배금: ${amount}`,\n    },\n  });\n}\n\nreturn outputs;"
+          "jsCode": "const raw = items[0] ?? {};\nconst payload = raw.json?.response ?? raw.json ?? {};\nconst funds = Array.isArray(payload?.funds) ? payload.funds : [];\nconst outputs = [];\n\nfor (const fund of funds) {\n  if (fund?.alert_due !== true) {\n    continue;\n  }\n  const amount = typeof fund.distribution_amount === 'number'\n    ? `$${fund.distribution_amount.toFixed(4)}`\n    : '미공시';\n  outputs.push({\n    json: {\n      symbol: fund.symbol,\n      message: `${fund.symbol} 오늘 밤 미국장 마감 전까지 매수 필요\\n주당 분배금: ${amount}`,\n    },\n  });\n}\n\nreturn outputs;"
         },
         "type": "n8n-nodes-base.code",
         "typeVersion": 2,
