@@ -81,3 +81,62 @@ def list_signal_alerts(
     items = list(db.scalars(stmt.limit(limit)).all())
     total = db.scalar(count_stmt) or 0
     return items, total
+
+
+def get_distribution_deadline_state_by_symbol(db: Session, symbol: str) -> models.DistributionDeadlineState | None:
+    return db.scalar(select(models.DistributionDeadlineState).where(models.DistributionDeadlineState.symbol == symbol))
+
+
+def upsert_distribution_deadline_state(
+    db: Session,
+    *,
+    symbol: str,
+    ex_dividend_date: date,
+    alert_kst_date: date,
+    deadline_kst_date: date,
+    checked_at: datetime,
+    last_alert_key: str | None,
+) -> models.DistributionDeadlineState:
+    item = get_distribution_deadline_state_by_symbol(db, symbol)
+    if item is None:
+        item = models.DistributionDeadlineState(
+            symbol=symbol,
+            ex_dividend_date=ex_dividend_date,
+            alert_kst_date=alert_kst_date,
+            deadline_kst_date=deadline_kst_date,
+            last_alert_key=last_alert_key,
+            last_checked_at=checked_at,
+        )
+    else:
+        item.ex_dividend_date = ex_dividend_date
+        item.alert_kst_date = alert_kst_date
+        item.deadline_kst_date = deadline_kst_date
+        item.last_alert_key = last_alert_key
+        item.last_checked_at = checked_at
+
+    db.add(item)
+    db.commit()
+    db.refresh(item)
+    return item
+
+
+def create_distribution_deadline_alert(
+    db: Session,
+    *,
+    symbol: str,
+    ex_dividend_date: date,
+    alert_kst_date: date,
+    deadline_kst_date: date,
+    distribution_amount: float | None,
+) -> models.DistributionDeadlineAlert:
+    item = models.DistributionDeadlineAlert(
+        symbol=symbol,
+        ex_dividend_date=ex_dividend_date,
+        alert_kst_date=alert_kst_date,
+        deadline_kst_date=deadline_kst_date,
+        distribution_amount=distribution_amount,
+    )
+    db.add(item)
+    db.commit()
+    db.refresh(item)
+    return item

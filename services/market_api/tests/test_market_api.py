@@ -64,6 +64,42 @@ class MarketApiTests(unittest.TestCase):
         self.assertTrue(response.changed)
 
     @patch.object(deps.settings, "job_shared_secret", "test-job-secret")
+    @patch(
+        "services.market_api.app.routers.market.market_service.run_distribution_deadline_check",
+        return_value=schemas.DistributionDeadlineCheckResponse(
+            generated_at=datetime(2026, 4, 7, 20, 30, tzinfo=timezone.utc),
+            funds=[
+                schemas.DistributionDeadlineFundResponse(
+                    symbol="XQQI",
+                    source_url="https://neosfunds.com/xqqi/",
+                    declaration_date=date(2026, 4, 7),
+                    ex_dividend_date=date(2026, 4, 8),
+                    record_date=date(2026, 4, 8),
+                    payable_date=date(2026, 4, 10),
+                    distribution_amount=None,
+                    eligible_session_start_et=datetime(2026, 4, 7, 9, 30, tzinfo=timezone.utc),
+                    eligible_session_end_et=datetime(2026, 4, 7, 16, 0, tzinfo=timezone.utc),
+                    eligible_session_start_kst=datetime(2026, 4, 7, 22, 30, tzinfo=timezone.utc),
+                    eligible_session_end_kst=datetime(2026, 4, 8, 5, 0, tzinfo=timezone.utc),
+                    alert_kst_date=date(2026, 4, 7),
+                    is_alert_day_kst=True,
+                    deadline_kst_date=date(2026, 4, 8),
+                    is_deadline_day_kst=False,
+                    alert_due=True,
+                )
+            ],
+        ),
+    )
+    def test_distribution_deadline_check_returns_structured_payload(self, _run_distribution_deadline_check: object) -> None:
+        with self.SessionLocal() as db:
+            response = market.run_distribution_deadline_check("test-job-secret", db)
+
+        self.assertEqual(response.funds[0].symbol, "XQQI")
+        self.assertTrue(response.funds[0].alert_due)
+        self.assertEqual(response.funds[0].alert_kst_date, date(2026, 4, 7))
+        self.assertEqual(response.funds[0].deadline_kst_date, date(2026, 4, 8))
+
+    @patch.object(deps.settings, "job_shared_secret", "test-job-secret")
     def test_status_current_returns_empty_state_when_no_signal_exists(self) -> None:
         with self.SessionLocal() as db:
             response = market.get_current_signal_status("test-job-secret", db)

@@ -27,13 +27,19 @@ class SeedTests(unittest.TestCase):
                     bootstrap_managed_apis(db)
                     first_pass = db.scalars(select(models.ManagedAPI).order_by(models.ManagedAPI.name)).all()
 
-                    self.assertEqual(len(first_pass), 9)
-                    self.assertEqual(first_pass[0].group_path, "platform/admin")
+                    self.assertEqual(len(first_pass), 10)
+                    self.assertEqual(first_pass[0].name, "Admin Health")
+                    distribution_api = next(item for item in first_pass if item.name == "distribution-deadline-check")
+                    self.assertEqual(distribution_api.group_path, "market/distributions")
+                    self.assertEqual(
+                        distribution_api.url,
+                        "http://127.0.0.1:8100/api/v1/jobs/distribution-deadline-check",
+                    )
 
                     bootstrap_managed_apis(db)
                     second_pass = db.scalars(select(models.ManagedAPI).order_by(models.ManagedAPI.name)).all()
 
-                    self.assertEqual(len(second_pass), 9)
+                    self.assertEqual(len(second_pass), 10)
 
 
 if __name__ == "__main__":

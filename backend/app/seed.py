@@ -88,6 +88,14 @@ def get_default_managed_apis() -> list[schemas.ManagedAPICreate]:
             is_active=True,
         ),
         schemas.ManagedAPICreate(
+            name="distribution-deadline-check",
+            group_path="market/distributions",
+            url=_build_managed_api_url(market_base, f"{settings.api_prefix}/jobs/distribution-deadline-check"),
+            method="POST",
+            description="XQQI / QQQI 배당 권리 최종 매수 마감일 체크 실행",
+            is_active=True,
+        ),
+        schemas.ManagedAPICreate(
             name="Market Current Status",
             group_path="market/status",
             url=_build_managed_api_url(market_base, f"{settings.api_prefix}/status/current"),

@@ -44,3 +44,39 @@ class SignalAlert(Base):
     rsi: Mapped[float] = mapped_column(Float, nullable=False)
     market_date: Mapped[date] = mapped_column(Date, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, nullable=False)
+
+
+class DistributionDeadlineState(Base):
+    __tablename__ = "distribution_deadline_states"
+    __table_args__ = (UniqueConstraint("symbol", name="uq_distribution_deadline_states_symbol"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    symbol: Mapped[str] = mapped_column(String(20), nullable=False, index=True)
+    ex_dividend_date: Mapped[date] = mapped_column(Date, nullable=False)
+    alert_kst_date: Mapped[date] = mapped_column(Date, nullable=False)
+    deadline_kst_date: Mapped[date] = mapped_column(Date, nullable=False)
+    last_alert_key: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    last_checked_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=utcnow,
+        onupdate=utcnow,
+        nullable=False,
+    )
+
+
+class DistributionDeadlineAlert(Base):
+    __tablename__ = "distribution_deadline_alerts"
+    __table_args__ = (
+        Index("ix_distribution_deadline_alerts_symbol_created_at", "symbol", "created_at"),
+        Index("ix_distribution_deadline_alerts_ex_dividend_date", "ex_dividend_date"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    symbol: Mapped[str] = mapped_column(String(20), nullable=False, index=True)
+    ex_dividend_date: Mapped[date] = mapped_column(Date, nullable=False)
+    alert_kst_date: Mapped[date] = mapped_column(Date, nullable=False)
+    deadline_kst_date: Mapped[date] = mapped_column(Date, nullable=False)
+    distribution_amount: Mapped[float | None] = mapped_column(Float, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, nullable=False)

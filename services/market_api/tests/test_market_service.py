@@ -1,13 +1,13 @@
 import os
 import tempfile
 import unittest
-from datetime import date
+from datetime import date, datetime, timezone
 from unittest.mock import patch
 
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, select
 from sqlalchemy.orm import Session, sessionmaker
 
-from services.market_api.app import crud
+from services.market_api.app import crud, models
 from services.market_api.app.database import Base
 from services.market_api.app.services import market_service
 
@@ -32,6 +32,113 @@ def make_chart_payload(closes: list[float]) -> dict:
     }
 
 
+XQQI_HTML = """
+<html>
+  <body>
+    <table>
+      <thead>
+        <tr>
+          <th>Declaration Date</th>
+          <th>Ex-Div Date</th>
+          <th>Record Date</th>
+          <th>Payable Date</th>
+          <th>Amount ($)</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>03/03/2026</td>
+          <td>03/04/2026</td>
+          <td>03/04/2026</td>
+          <td>03/06/2026</td>
+          <td>$0.8139</td>
+        </tr>
+        <tr>
+          <td>04/07/2026</td>
+          <td>04/08/2026</td>
+          <td>04/08/2026</td>
+          <td>04/10/2026</td>
+          <td></td>
+        </tr>
+        <tr>
+          <td>05/05/2026</td>
+          <td>05/06/2026</td>
+          <td>05/06/2026</td>
+          <td>05/08/2026</td>
+          <td>$0.8021</td>
+        </tr>
+      </tbody>
+    </table>
+  </body>
+</html>
+"""
+
+QQQI_HTML = """
+<html>
+  <body>
+    <table>
+      <thead>
+        <tr>
+          <th>Declaration Date</th>
+          <th>Ex-Div Date</th>
+          <th>Record Date</th>
+          <th>Payable Date</th>
+          <th>Amount ($)</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>01/20/2026</td>
+          <td>01/21/2026</td>
+          <td>01/21/2026</td>
+          <td>01/23/2026</td>
+          <td>$0.6359</td>
+        </tr>
+        <tr>
+          <td>03/17/2026</td>
+          <td>03/18/2026</td>
+          <td>03/18/2026</td>
+          <td>03/20/2026</td>
+          <td>$0.6089</td>
+        </tr>
+        <tr>
+          <td>04/21/2026</td>
+          <td>04/22/2026</td>
+          <td>04/22/2026</td>
+          <td>04/24/2026</td>
+          <td></td>
+        </tr>
+      </tbody>
+    </table>
+  </body>
+</html>
+"""
+
+CBOE_HTML = """
+<html>
+  <body>
+    <h3>2026<!-- --> Equities Holiday Schedule</h3>
+    <table>
+      <tbody>
+        <tr><td>New Year's Day</td><td>January 1</td></tr>
+        <tr><td>Martin Luther King, Jr. Day</td><td>January 19</td></tr>
+        <tr><td>Presidents' Day</td><td>February 16</td></tr>
+        <tr><td>Good Friday</td><td>April 3</td></tr>
+        <tr><td>Memorial Day</td><td>May 25</td></tr>
+        <tr><td>Juneteenth Holiday</td><td>June 19</td></tr>
+        <tr><td>Independence Day Observed</td><td>July 3</td></tr>
+        <tr><td>Labor Day</td><td>September 7</td></tr>
+        <tr><td>Thanksgiving Day</td><td>November 26</td></tr>
+        <tr><td>Thanksgiving Early Close</td><td>November 27</td></tr>
+        <tr><td>Christmas Early Close</td><td>December 24</td></tr>
+        <tr><td>Christmas Day</td><td>December 25</td></tr>
+      </tbody>
+    </table>
+  </body>
+</html>
+"""
+
+
 class MarketServiceTests(unittest.TestCase):
     def setUp(self) -> None:
         handle = tempfile.NamedTemporaryFile(suffix=".db", delete=False)
@@ -45,10 +152,21 @@ class MarketServiceTests(unittest.TestCase):
         self.SessionLocal = sessionmaker(bind=self.engine, autoflush=False, autocommit=False, future=True)
         Base.metadata.create_all(bind=self.engine)
         self.db: Session = self.SessionLocal()
+        market_service._load_cboe_holiday_calendar.cache_clear()
 
     def tearDown(self) -> None:
         self.db.close()
         self.engine.dispose()
+        market_service._load_cboe_holiday_calendar.cache_clear()
+
+    def _fake_fetch_text(self, url: str) -> str:
+        if url == market_service.CBOE_HOURS_URL:
+            return CBOE_HTML
+        if url == market_service.NEOS_DISTRIBUTION_PAGES["XQQI"]:
+            return XQQI_HTML
+        if url == market_service.NEOS_DISTRIBUTION_PAGES["QQQI"]:
+            return QQQI_HTML
+        raise AssertionError(f"Unexpected URL: {url}")
 
     def test_calculate_rsi_requires_period_plus_one_closes(self) -> None:
         with self.assertRaises(ValueError):
@@ -154,3 +272,81 @@ class MarketServiceTests(unittest.TestCase):
         state = crud.get_signal_state_by_symbol(self.db, "QLD")
         self.assertIsNotNone(state)
         self.assertEqual(state.market_date, date(2025, 3, 15))
+
+    @patch("services.market_api.app.services.market_service._fetch_text")
+    def test_distribution_snapshot_converts_deadline_session_to_kst(self, fetch_text: object) -> None:
+        fetch_text.side_effect = self._fake_fetch_text
+
+        snapshot = market_service._next_distribution_snapshot(
+            "XQQI",
+            now_utc=datetime(2026, 4, 6, 20, 30, tzinfo=timezone.utc),
+        )
+
+        self.assertEqual(snapshot.ex_dividend_date, date(2026, 4, 8))
+        self.assertEqual(snapshot.alert_kst_date, date(2026, 4, 7))
+        self.assertEqual(snapshot.deadline_kst_date, date(2026, 4, 8))
+        self.assertEqual(snapshot.eligible_session_start_kst.isoformat(), "2026-04-07T22:30:00+09:00")
+        self.assertEqual(snapshot.eligible_session_end_kst.isoformat(), "2026-04-08T05:00:00+09:00")
+        self.assertTrue(snapshot.is_alert_day_kst)
+        self.assertFalse(snapshot.is_deadline_day_kst)
+        self.assertIsNone(snapshot.distribution_amount)
+
+    @patch("services.market_api.app.services.market_service._fetch_text")
+    def test_distribution_snapshot_handles_standard_time_session(self, fetch_text: object) -> None:
+        fetch_text.side_effect = self._fake_fetch_text
+
+        snapshot = market_service._next_distribution_snapshot(
+            "QQQI",
+            now_utc=datetime(2026, 1, 19, 20, 30, tzinfo=timezone.utc),
+        )
+
+        self.assertEqual(snapshot.ex_dividend_date, date(2026, 1, 21))
+        self.assertEqual(snapshot.alert_kst_date, date(2026, 1, 20))
+        self.assertEqual(snapshot.eligible_session_start_kst.isoformat(), "2026-01-20T23:30:00+09:00")
+        self.assertEqual(snapshot.eligible_session_end_kst.isoformat(), "2026-01-21T06:00:00+09:00")
+        self.assertEqual(snapshot.distribution_amount, 0.6359)
+        self.assertTrue(snapshot.is_alert_day_kst)
+        self.assertFalse(snapshot.is_deadline_day_kst)
+
+    @patch.object(market_service.settings, "market_distribution_symbols", "XQQI,QQQI")
+    @patch("services.market_api.app.services.market_service._fetch_text")
+    def test_distribution_deadline_check_sends_alert_once_per_symbol(self, fetch_text: object) -> None:
+        fetch_text.side_effect = self._fake_fetch_text
+        now_utc = datetime(2026, 4, 6, 20, 30, tzinfo=timezone.utc)
+
+        first = market_service.run_distribution_deadline_check(self.db, now_utc=now_utc)
+        second = market_service.run_distribution_deadline_check(self.db, now_utc=now_utc)
+
+        funds_first = {item.symbol: item for item in first.funds}
+        funds_second = {item.symbol: item for item in second.funds}
+
+        self.assertTrue(funds_first["XQQI"].alert_due)
+        self.assertFalse(funds_first["QQQI"].alert_due)
+        self.assertFalse(funds_second["XQQI"].alert_due)
+        self.assertFalse(funds_second["QQQI"].alert_due)
+
+        alerts = list(self.db.scalars(select(models.DistributionDeadlineAlert)).all())
+        self.assertEqual(len(alerts), 1)
+        self.assertEqual(alerts[0].symbol, "XQQI")
+
+        state = crud.get_distribution_deadline_state_by_symbol(self.db, "XQQI")
+        self.assertIsNotNone(state)
+        self.assertEqual(state.alert_kst_date, date(2026, 4, 7))
+        self.assertEqual(state.deadline_kst_date, date(2026, 4, 8))
+
+    @patch.object(market_service.settings, "market_distribution_symbols", "XQQI,QQQI")
+    @patch("services.market_api.app.services.market_service._fetch_text")
+    def test_distribution_deadline_check_does_not_alert_on_kst_deadline_morning(self, fetch_text: object) -> None:
+        fetch_text.side_effect = self._fake_fetch_text
+
+        result = market_service.run_distribution_deadline_check(
+            self.db,
+            now_utc=datetime(2026, 4, 7, 20, 30, tzinfo=timezone.utc),
+        )
+
+        funds = {item.symbol: item for item in result.funds}
+
+        self.assertFalse(funds["XQQI"].is_alert_day_kst)
+        self.assertEqual(funds["XQQI"].ex_dividend_date, date(2026, 5, 6))
+        self.assertFalse(funds["XQQI"].is_deadline_day_kst)
+        self.assertFalse(funds["XQQI"].alert_due)

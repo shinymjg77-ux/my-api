@@ -1,0 +1,149 @@
+[
+  {
+    "updatedAt": "2026-04-01T00:00:00.000Z",
+    "createdAt": "2026-04-01T00:00:00.000Z",
+    "id": "neosDistributionDeadline",
+    "name": "NEOS distribution deadline",
+    "description": "Runs every day at 05:30 KST, checks whether today is the Korean morning of the final actionable buying day for the next XQQI or QQQI distribution, and sends one Telegram message per due symbol.",
+    "active": true,
+    "isArchived": false,
+    "nodes": [
+      {
+        "parameters": {
+          "rule": {
+            "interval": [
+              {
+                "field": "days",
+                "triggerAtHour": 5,
+                "triggerAtMinute": 30
+              }
+            ]
+          }
+        },
+        "type": "n8n-nodes-base.scheduleTrigger",
+        "typeVersion": 1.3,
+        "position": [
+          -640,
+          -128
+        ],
+        "id": "58cf1d31-b8fd-47e5-8f37-337bc095bda6",
+        "name": "Schedule Trigger",
+        "notesInFlow": false
+      },
+      {
+        "parameters": {
+          "method": "POST",
+          "url": "__OPS_PUBLIC_BASE_URL__/internal/market-api/api/v1/jobs/distribution-deadline-check",
+          "sendHeaders": true,
+          "specifyHeaders": "keypair",
+          "headerParameters": {
+            "parameters": [
+              {
+                "name": "X-Job-Secret",
+                "value": "__JOB_SHARED_SECRET__"
+              }
+            ]
+          },
+          "options": {
+            "response": {
+              "response": {
+                "neverError": true,
+                "responseFormat": "json",
+                "outputPropertyName": "response"
+              }
+            },
+            "timeout": 10000
+          }
+        },
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.4,
+        "position": [
+          -384,
+          -128
+        ],
+        "id": "65f7ec0f-8fca-4f4a-ac99-617af64ff4b8",
+        "name": "Run Distribution Deadline Check",
+        "onError": "continueRegularOutput"
+      },
+      {
+        "parameters": {
+          "jsCode": "const raw = items[0] ?? {};\nconst payload = raw.json?.response ?? raw.json ?? {};\nconst funds = Array.isArray(payload.funds) ? payload.funds : [];\nconst outputs = [];\n\nfor (const fund of funds) {\n  if (fund?.alert_due !== true) {\n    continue;\n  }\n  const amount = typeof fund.distribution_amount === 'number'\n    ? `$${fund.distribution_amount.toFixed(4)}`\n    : '미공시';\n  outputs.push({\n    json: {\n      symbol: fund.symbol,\n      message: `${fund.symbol} 오늘 밤 미국장 마감 전까지 매수 필요\\n주당 분배금: ${amount}`,\n    },\n  });\n}\n\nreturn outputs;"
+        },
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          -128,
+          -128
+        ],
+        "id": "76b13ccc-bfe2-4f42-a7f8-03e8d4fb11bb",
+        "name": "Build Distribution Messages"
+      },
+      {
+        "parameters": {
+          "chatId": "__OPS_ALERT_CHAT_ID__",
+          "text": "={{$json.message}}",
+          "additionalFields": {}
+        },
+        "type": "n8n-nodes-base.telegram",
+        "typeVersion": 1.2,
+        "position": [
+          128,
+          -128
+        ],
+        "id": "a4d141b1-cf3a-42ea-974d-4e545ad48985",
+        "name": "Send Distribution Alert",
+        "credentials": {
+          "telegramApi": {
+            "id": "__N8N_TELEGRAM_CREDENTIAL_ID__",
+            "name": "Telegram account"
+          }
+        }
+      }
+    ],
+    "connections": {
+      "Schedule Trigger": {
+        "main": [
+          [
+            {
+              "node": "Run Distribution Deadline Check",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Run Distribution Deadline Check": {
+        "main": [
+          [
+            {
+              "node": "Build Distribution Messages",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Build Distribution Messages": {
+        "main": [
+          [
+            {
+              "node": "Send Distribution Alert",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      }
+    },
+    "settings": {
+      "executionOrder": "v1",
+      "binaryMode": "separate",
+      "availableInMCP": false
+    },
+    "staticData": {
+      "node:Schedule Trigger": {
+        "recurrenceRules": []
+      }
+    }
+  }
+]

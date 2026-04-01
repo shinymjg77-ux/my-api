@@ -20,6 +20,7 @@ FastAPI 백엔드와 Next.js 관리자 프론트엔드로 구성된 개인 운�
 - `X-Job-Secret` 기반 내부 잡 API 인증
 - 운영 이상 감지 API (`/api/v1/jobs/ops-check`) 와 n8n 알림 연동
 - 텔레그램 기반 조회 전용 운영 명령 (`/ops help`, `/ops version`, `/ops drift`, `/ops overview`)
+- `XQQI` / `QQQI` 배당 권리 최종 매수 가능일 계산과 텔레그램 알림
 - DB 연결 정보 저장과 즉시 연결 테스트
 - 운영 로그 조회
 - 관리자 비밀번호 변경 UI
@@ -41,6 +42,7 @@ FastAPI 백엔드와 Next.js 관리자 프론트엔드로 구성된 개인 운�
 - `platform/admin/jobs`
 - `market/health`
 - `market/briefings`
+- `market/distributions`
 - `market/signals`
 - `market/status`
 
@@ -112,7 +114,7 @@ OCI Ubuntu 서버 배포 절차와 운영 자동화 문서는 아래를 참고�
 - 외부 공개 주소: `https://admin.example.com`
 - 버전 확인: `GET /version`, `GET /api/runtime/version`
 - 드리프트 확인: `./scripts/check_release_drift.sh <ssh-host>`
-- `n8n` 템플릿: `deploy/n8n/workflows/ops-command-telegram.json`, `deploy/n8n/workflows/ops-alert.json`
+- `n8n` 템플릿: `deploy/n8n/workflows/ops-command-telegram.json`, `deploy/n8n/workflows/ops-alert.json`, `deploy/n8n/workflows/neos-distribution-deadline.json`
 
 ## GitHub 업로드 전 주의
 

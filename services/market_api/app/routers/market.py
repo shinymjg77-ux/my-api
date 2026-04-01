@@ -31,6 +31,20 @@ def run_rsi_check(
         raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail="Failed to calculate RSI signal") from exc
 
 
+@router.post("/jobs/distribution-deadline-check", response_model=schemas.DistributionDeadlineCheckResponse)
+def run_distribution_deadline_check(
+    _: str = Depends(require_job_secret),
+    db: Session = Depends(get_db),
+) -> schemas.DistributionDeadlineCheckResponse:
+    try:
+        return market_service.run_distribution_deadline_check(db)
+    except market_service.MarketDataError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="Failed to calculate distribution deadline signal",
+        ) from exc
+
+
 @router.get("/status/current", response_model=schemas.SignalStateCurrentResponse)
 def get_current_signal_status(
     _: str = Depends(require_job_secret),

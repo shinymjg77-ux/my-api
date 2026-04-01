@@ -3,7 +3,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 
 from .config import settings
-from .database import Base, engine, ensure_sqlite_directory
+from .database import Base, engine, ensure_sqlite_directory, ensure_sqlite_schema
 from .routers import market
 
 
@@ -11,6 +11,7 @@ from .routers import market
 async def lifespan(_: FastAPI):
     ensure_sqlite_directory()
     Base.metadata.create_all(bind=engine)
+    ensure_sqlite_schema()
     yield
 
 

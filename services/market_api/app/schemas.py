@@ -70,3 +70,27 @@ class SignalAlertResponse(BaseModel):
 class SignalAlertHistoryResponse(BaseModel):
     items: list[SignalAlertResponse]
     total: int
+
+
+class DistributionDeadlineFundResponse(BaseModel):
+    symbol: str
+    source_url: str
+    declaration_date: date
+    ex_dividend_date: date
+    record_date: date
+    payable_date: date
+    distribution_amount: float | None
+    eligible_session_start_et: datetime
+    eligible_session_end_et: datetime
+    eligible_session_start_kst: datetime
+    eligible_session_end_kst: datetime
+    alert_kst_date: date
+    is_alert_day_kst: bool
+    deadline_kst_date: date
+    is_deadline_day_kst: bool
+    alert_due: bool
+
+
+class DistributionDeadlineCheckResponse(BaseModel):
+    generated_at: datetime
+    funds: list[DistributionDeadlineFundResponse]

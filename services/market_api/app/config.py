@@ -27,6 +27,7 @@ class Settings(BaseSettings):
     market_rsi_period: int = 14
     market_rsi_threshold: float = 30.0
     market_briefing_symbols: str = "^GSPC,^IXIC"
+    market_distribution_symbols: str = "XQQI,QQQI"
 
     @field_validator("market_briefing_symbols", mode="before")
     @classmethod
@@ -36,6 +37,10 @@ class Settings(BaseSettings):
     @property
     def market_briefing_symbols_list(self) -> list[str]:
         return [item.strip() for item in self.market_briefing_symbols.split(",") if item.strip()]
+
+    @property
+    def market_distribution_symbols_list(self) -> list[str]:
+        return [item.strip().upper() for item in self.market_distribution_symbols.split(",") if item.strip()]
 
 
 settings = Settings()
