@@ -35,6 +35,9 @@ class MarketApiTests(unittest.TestCase):
         "services.market_api.app.routers.market.market_service.run_rsi_check",
         return_value=schemas.RSICheckResponse(
             symbol="QLD",
+            target_session_date=date(2026, 3, 17),
+            should_send=True,
+            skip_reason=None,
             close=104.25,
             change=-1.5,
             change_pct=-1.42,

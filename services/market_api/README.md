@@ -31,6 +31,10 @@ uvicorn app.main:app --reload --host 127.0.0.1 --port 8100
 
 `/api/v1/*` 엔드포인트는 모두 `X-Job-Secret` 헤더가 필요합니다.
 
+미국 주식시장이 주말 또는 `Good Friday` 같은 full holiday 인 날에는
+브리핑/QLD 응답이 `should_send=false`, `skip_reason="market_closed"` 를 반환합니다.
+이 경우 운영 workflow 는 텔레그램을 보내지 않습니다.
+
 ## 배당 마감일 신호
 
 `POST /api/v1/jobs/distribution-deadline-check` 는 NEOS 공식 `XQQI` / `QQQI` 분배 일정을 읽고, 배당 권리를 받기 위한 마지막 매수 가능 미국 정규장 세션을 계산합니다.

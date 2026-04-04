@@ -1,0 +1,250 @@
+[
+  {
+    "updatedAt": "2026-04-04T00:00:00.000Z",
+    "createdAt": "2026-03-18T00:00:00.000Z",
+    "id": "TaYv5KrsbygswQi6",
+    "name": "My workflow",
+    "description": "Runs every business day at 05:30 KST, sends the U.S. market close briefing only when the current U.S. session actually traded, and skips the QLD RSI message on U.S. full-market holidays and weekends.",
+    "active": true,
+    "isArchived": false,
+    "nodes": [
+      {
+        "parameters": {
+          "rule": {
+            "interval": [
+              {
+                "field": "weeks",
+                "triggerAtDay": [
+                  2,
+                  3,
+                  4,
+                  5,
+                  6
+                ],
+                "triggerAtHour": 5,
+                "triggerAtMinute": 30
+              }
+            ]
+          }
+        },
+        "type": "n8n-nodes-base.scheduleTrigger",
+        "typeVersion": 1.3,
+        "position": [
+          -720,
+          -224
+        ],
+        "id": "4364d874-4706-4b85-b023-9a97b7d03479",
+        "name": "Schedule Trigger",
+        "notesInFlow": false
+      },
+      {
+        "parameters": {
+          "url": "__OPS_PUBLIC_BASE_URL__/internal/market-api/api/v1/briefings/morning",
+          "sendHeaders": true,
+          "headerParameters": {
+            "parameters": [
+              {
+                "name": "X-Job-Secret",
+                "value": "__JOB_SHARED_SECRET__"
+              }
+            ]
+          },
+          "options": {
+            "response": {
+              "response": {
+                "neverError": true,
+                "responseFormat": "json",
+                "outputPropertyName": "response"
+              }
+            }
+          }
+        },
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.4,
+        "position": [
+          -480,
+          -224
+        ],
+        "id": "1f7fddca-b452-4b8b-9ac1-d9ee27cbe101",
+        "name": "Get Morning Briefing",
+        "onError": "continueRegularOutput"
+      },
+      {
+        "parameters": {
+          "jsCode": "const raw = items[0] ?? {};\nconst data = raw.json?.response ?? raw.json ?? {};\nconst error = raw.error ?? raw.json?.error ?? data?.error;\n\nfunction errorDetail() {\n  if (typeof error === 'string' && error) return error;\n  if (error?.message) return error.message;\n  if (raw.json?.message) return raw.json.message;\n  if (data?.message) return data.message;\n  return 'unexpected response';\n}\n\nif (data?.should_send === false && data?.skip_reason === 'market_closed') {\n  return [];\n}\n\nif (error || !data?.indices?.sp500 || !data?.indices?.nasdaq) {\n  return [{\n    json: {\n      message: `market_api 브리핑 호출 실패\\n${errorDetail()}`,\n      briefing_ok: false,\n      should_send: false,\n    },\n  }];\n}\n\nfunction formatNumber(value) {\n  const num = Number(value);\n  if (!Number.isFinite(num)) return 'N/A';\n  return new Intl.NumberFormat('en-US', { maximumFractionDigits: 2 }).format(num);\n}\n\nfunction formatSigned(value) {\n  const num = Number(value);\n  if (!Number.isFinite(num)) return 'N/A';\n  const sign = num > 0 ? '+' : '';\n  return `${sign}${num.toFixed(2)}`;\n}\n\nfunction formatPct(value) {\n  const num = Number(value);\n  if (!Number.isFinite(num)) return 'N/A';\n  const sign = num > 0 ? '+' : '';\n  return `${sign}${num.toFixed(2)}%`;\n}\n\nfunction formatKstNow() {\n  const formatter = new Intl.DateTimeFormat('en-CA', {\n    timeZone: 'Asia/Seoul',\n    year: 'numeric',\n    month: '2-digit',\n    day: '2-digit',\n    hour: '2-digit',\n    minute: '2-digit',\n    hour12: false,\n  });\n  const parts = Object.fromEntries(\n    formatter.formatToParts(new Date()).map((part) => [part.type, part.value]),\n  );\n  return `${parts.year}. ${parts.month}. ${parts.day}. ${parts.hour}:${parts.minute} KST`;\n}\n\nconst sp = data.indices.sp500;\nconst nasdaq = data.indices.nasdaq;\nconst sentAtKst = formatKstNow();\n\nreturn [{\n  json: {\n    briefing_ok: true,\n    should_send: true,\n    message: [\n      '미국 증시 마감 브리핑',\n      `기준일: ${data.market_date ?? data.target_session_date ?? '-'}`,\n      `발송시각: ${sentAtKst}`,\n      `S&P 500: ${formatNumber(sp.close)} (${formatSigned(sp.change)}, ${formatPct(sp.change_pct)})`,\n      `Nasdaq: ${formatNumber(nasdaq.close)} (${formatSigned(nasdaq.change)}, ${formatPct(nasdaq.change_pct)})`,\n    ].join('\\n'),\n  },\n}];\n"
+        },
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          -240,
+          -224
+        ],
+        "id": "9a7bf4bc-c2e6-40fc-ae8a-ebec0070e551",
+        "name": "Build Briefing Message"
+      },
+      {
+        "parameters": {
+          "jsCode": "if ($json.briefing_ok !== true || $json.should_send !== true) {\n  return [];\n}\n\nreturn [{ json: {} }];"
+        },
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          0,
+          -80
+        ],
+        "id": "74d88b7d-f225-4465-91d1-f8c88f6e1486",
+        "name": "Prepare RSI Request"
+      },
+      {
+        "parameters": {
+          "method": "POST",
+          "url": "__OPS_PUBLIC_BASE_URL__/internal/market-api/api/v1/jobs/rsi-check",
+          "sendHeaders": true,
+          "headerParameters": {
+            "parameters": [
+              {
+                "name": "X-Job-Secret",
+                "value": "__JOB_SHARED_SECRET__"
+              }
+            ]
+          },
+          "options": {
+            "response": {
+              "response": {
+                "neverError": true,
+                "responseFormat": "json",
+                "outputPropertyName": "response"
+              }
+            }
+          }
+        },
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.4,
+        "position": [
+          240,
+          -80
+        ],
+        "id": "a7629f86-eef2-4559-97ff-c902adfeff5b",
+        "name": "Run RSI Check",
+        "onError": "continueRegularOutput"
+      },
+      {
+        "parameters": {
+          "jsCode": "const raw = items[0] ?? {};\nconst data = raw.json?.response ?? raw.json ?? {};\nconst error = raw.error ?? raw.json?.error ?? data?.error;\n\nfunction errorDetail() {\n  if (typeof error === 'string' && error) return error;\n  if (error?.message) return error.message;\n  if (raw.json?.message) return raw.json.message;\n  if (data?.message) return data.message;\n  return 'unexpected response';\n}\n\nif (data?.should_send === false && data?.skip_reason === 'market_closed') {\n  return [];\n}\n\nif (error || typeof data?.rsi === 'undefined' || typeof data?.close === 'undefined') {\n  return [{\n    json: {\n      message: `market_api RSI 체크 실패\\n${errorDetail()}`,\n    },\n  }];\n}\n\nfunction formatNumber(value) {\n  const num = Number(value);\n  if (!Number.isFinite(num)) return 'N/A';\n  return new Intl.NumberFormat('en-US', { maximumFractionDigits: 2 }).format(num);\n}\n\nfunction formatSignedMoney(value) {\n  const num = Number(value);\n  if (!Number.isFinite(num)) return 'N/A';\n  const sign = num > 0 ? '+' : num < 0 ? '-' : '';\n  return `${sign}$${formatNumber(Math.abs(num))}`;\n}\n\nfunction formatSignedPct(value) {\n  const num = Number(value);\n  if (!Number.isFinite(num)) return 'N/A';\n  const sign = num > 0 ? '+' : num < 0 ? '-' : '';\n  return `${sign}${Math.abs(num).toFixed(2)}%`;\n}\n\nfunction formatSignedValue(value) {\n  const num = Number(value);\n  if (!Number.isFinite(num)) return 'N/A';\n  const sign = num > 0 ? '+' : num < 0 ? '-' : '';\n  return `${sign}${Math.abs(num).toFixed(2)}`;\n}\n\nfunction escapeTelegramText(value) {\n  return String(value ?? '-').replace(/_/g, '\\\\_');\n}\n\nconst symbol = data.symbol ?? 'QLD';\nconst rsiValue = Number(data.rsi);\nconst rsiText = Number.isFinite(rsiValue) ? rsiValue.toFixed(2) : 'N/A';\nconst lines = [\n  `${symbol} 가격 & RSI 체크`,\n  `기준일: ${data.market_date ?? data.target_session_date ?? '-'}`,\n  `종가: $${formatNumber(data.close)} (${formatSignedMoney(data.change)}, ${formatSignedPct(data.change_pct)})`,\n  `RSI(14): ${rsiText} (${formatSignedValue(data.rsi_change)})`,\n  `상태: ${escapeTelegramText(data.state ?? '-')}`,\n];\n\nif (data.changed && data.previous_state) {\n  const eventText = data.event === 'ENTER_UNDER_30'\n    ? '재진입 준비 신호'\n    : data.event === 'EXIT_UNDER_30'\n      ? '과매도 해제'\n      : '상태 변경';\n  lines.push(`상태변경: ${escapeTelegramText(data.previous_state)} -> ${escapeTelegramText(data.state ?? '-')}`);\n  lines.push(`이벤트: ${eventText}`);\n}\n\nreturn [{\n  json: {\n    message: lines.join('\\n'),\n  },\n}];\n"
+        },
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          480,
+          -80
+        ],
+        "id": "b80e1656-5761-46fa-9dbf-6f05bfd702f5",
+        "name": "Build RSI Message"
+      },
+      {
+        "parameters": {
+          "chatId": "__OPS_ALERT_CHAT_ID__",
+          "text": "={{$json.message}}",
+          "additionalFields": {}
+        },
+        "type": "n8n-nodes-base.telegram",
+        "typeVersion": 1.2,
+        "position": [
+          240,
+          -224
+        ],
+        "id": "9f2bf504-e693-4f30-ae2f-c5f8d915e986",
+        "name": "Send a text message",
+        "credentials": {
+          "telegramApi": {
+            "id": "__N8N_TELEGRAM_CREDENTIAL_ID__",
+            "name": "Telegram account"
+          }
+        }
+      }
+    ],
+    "connections": {
+      "Schedule Trigger": {
+        "main": [
+          [
+            {
+              "node": "Get Morning Briefing",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Get Morning Briefing": {
+        "main": [
+          [
+            {
+              "node": "Build Briefing Message",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Build Briefing Message": {
+        "main": [
+          [
+            {
+              "node": "Send a text message",
+              "type": "main",
+              "index": 0
+            },
+            {
+              "node": "Prepare RSI Request",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Prepare RSI Request": {
+        "main": [
+          [
+            {
+              "node": "Run RSI Check",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Run RSI Check": {
+        "main": [
+          [
+            {
+              "node": "Build RSI Message",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Build RSI Message": {
+        "main": [
+          [
+            {
+              "node": "Send a text message",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      }
+    },
+    "settings": {
+      "executionOrder": "v1",
+      "binaryMode": "separate",
+      "availableInMCP": false
+    },
+    "staticData": {
+      "node:Schedule Trigger": {
+        "recurrenceRules": []
+      }
+    }
+  }
+]

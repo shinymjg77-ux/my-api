@@ -540,6 +540,7 @@ curl http://127.0.0.1:9000/version
 `n8n` 운영 확인 항목:
 
 - `My workflow`: 미국 증시 브리핑 + QLD RSI 발송
+  - 미국 full holiday 와 주말에는 `market_api`가 `should_send=false` 를 반환하고 텔레그램은 발송되지 않아야 함
 - `Ops alert`: 10분 주기 운영 이상 감지 알림
 
 `n8n` 내부 점검 경로 확인:

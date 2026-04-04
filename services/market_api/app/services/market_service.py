@@ -62,6 +62,13 @@ class TradingSessionWindow:
     end_kst: datetime
 
 
+@dataclass(frozen=True)
+class MarketDeliveryDecision:
+    target_session_date: date
+    should_send: bool
+    skip_reason: schemas.MarketDeliverySkipReason | None
+
+
 def get_signal_symbol() -> str:
     return settings.market_rsi_symbol.strip().upper()
 
@@ -289,6 +296,13 @@ def _parse_month_day(value: str, year: int) -> date:
     return datetime.strptime(f"{value} {year}", "%B %d %Y").date()
 
 
+def _normalize_now_utc(now_utc: datetime | None = None) -> datetime:
+    value = now_utc or datetime.now(timezone.utc)
+    if value.tzinfo is None:
+        return value.replace(tzinfo=timezone.utc)
+    return value.astimezone(timezone.utc)
+
+
 @lru_cache(maxsize=8)
 def _load_cboe_holiday_calendar(year: int) -> tuple[set[date], set[date]]:
     html = _fetch_text(CBOE_HOURS_URL)
@@ -305,10 +319,16 @@ def _load_cboe_holiday_calendar(year: int) -> tuple[set[date], set[date]]:
     return full_holidays, early_closes
 
 
-def _previous_us_equities_trading_day(target_date: date) -> date:
+def _is_us_equities_trading_day(target_date: date) -> bool:
+    if target_date.weekday() >= 5:
+        return False
     full_holidays, _ = _load_cboe_holiday_calendar(target_date.year)
+    return target_date not in full_holidays
+
+
+def _previous_us_equities_trading_day(target_date: date) -> date:
     candidate = target_date - timedelta(days=1)
-    while candidate.weekday() >= 5 or candidate in full_holidays:
+    while not _is_us_equities_trading_day(candidate):
         candidate -= timedelta(days=1)
     return candidate
 
@@ -323,6 +343,39 @@ def _build_us_equities_session(trading_day: date) -> TradingSessionWindow:
         end_et=end_et,
         start_kst=start_et.astimezone(KST_TZ),
         end_kst=end_et.astimezone(KST_TZ),
+    )
+
+
+def _resolve_market_delivery_decision(
+    latest_market_date: date,
+    *,
+    now_utc: datetime | None = None,
+) -> MarketDeliveryDecision:
+    current_utc = _normalize_now_utc(now_utc)
+    current_et = current_utc.astimezone(EASTERN_TZ)
+    current_et_date = current_et.date()
+
+    if not _is_us_equities_trading_day(current_et_date):
+        return MarketDeliveryDecision(
+            target_session_date=current_et_date,
+            should_send=False,
+            skip_reason="market_closed",
+        )
+
+    session = _build_us_equities_session(current_et_date)
+    target_session_date = (
+        current_et_date if current_et >= session.end_et else _previous_us_equities_trading_day(current_et_date)
+    )
+    if latest_market_date != target_session_date:
+        raise MarketDataError(
+            f"Latest market data is stale for {target_session_date.isoformat()}: "
+            f"got {latest_market_date.isoformat()}"
+        )
+
+    return MarketDeliveryDecision(
+        target_session_date=target_session_date,
+        should_send=True,
+        skip_reason=None,
     )
 
 
@@ -371,7 +424,8 @@ def _next_distribution_snapshot(
     return min(candidates, key=lambda item: (item.ex_dividend_date, item.deadline_kst_date))
 
 
-def get_morning_briefing() -> schemas.MorningBriefingResponse:
+def get_morning_briefing(*, now_utc: datetime | None = None) -> schemas.MorningBriefingResponse:
+    current_utc = _normalize_now_utc(now_utc)
     symbol_map = _briefing_symbols()
     sp500 = _build_index_snapshot(
         symbol_map["sp500"],
@@ -381,15 +435,25 @@ def get_morning_briefing() -> schemas.MorningBriefingResponse:
         symbol_map["nasdaq"],
         _parse_daily_closes(_fetch_chart_payload(symbol_map["nasdaq"], range_value="1mo")),
     )
+    market_date = max(sp500.market_date, nasdaq.market_date)
+    delivery = _resolve_market_delivery_decision(market_date, now_utc=current_utc)
 
     return schemas.MorningBriefingResponse(
-        market_date=max(sp500.market_date, nasdaq.market_date),
-        generated_at=datetime.now(timezone.utc),
+        target_session_date=delivery.target_session_date,
+        should_send=delivery.should_send,
+        skip_reason=delivery.skip_reason,
+        market_date=market_date,
+        generated_at=current_utc,
         indices=schemas.MorningBriefingIndicesResponse(sp500=sp500, nasdaq=nasdaq),
     )
 
 
-def run_rsi_check(db: Session) -> schemas.RSICheckResponse:
+def run_rsi_check(
+    db: Session,
+    *,
+    now_utc: datetime | None = None,
+) -> schemas.RSICheckResponse:
+    current_utc = _normalize_now_utc(now_utc)
     symbol = get_signal_symbol()
     points = _parse_daily_closes(_fetch_chart_payload(symbol, range_value="6mo"))
     closes = [item.close for item in points]
@@ -406,8 +470,31 @@ def run_rsi_check(db: Session) -> schemas.RSICheckResponse:
     current_state = _state_for_rsi(rsi, settings.market_rsi_threshold)
     existing_state = crud.get_signal_state_by_symbol(db, symbol)
     previous_state = existing_state.state if existing_state else None
+    delivery = _resolve_market_delivery_decision(latest_point.market_date, now_utc=current_utc)
+    checked_at = current_utc
+
+    if not delivery.should_send:
+        return schemas.RSICheckResponse(
+            symbol=symbol,
+            target_session_date=delivery.target_session_date,
+            should_send=delivery.should_send,
+            skip_reason=delivery.skip_reason,
+            close=round(latest_point.close, 2),
+            change=change,
+            change_pct=change_pct,
+            rsi=rsi,
+            previous_rsi=previous_rsi,
+            rsi_change=rsi_change,
+            threshold=settings.market_rsi_threshold,
+            state=current_state,
+            previous_state=previous_state,
+            changed=False,
+            event=None,
+            market_date=latest_point.market_date,
+            checked_at=checked_at,
+        )
+
     event = _event_for_transition(previous_state, current_state)
-    checked_at = datetime.now(timezone.utc)
 
     crud.upsert_signal_state(
         db,
@@ -431,6 +518,9 @@ def run_rsi_check(db: Session) -> schemas.RSICheckResponse:
 
     return schemas.RSICheckResponse(
         symbol=symbol,
+        target_session_date=delivery.target_session_date,
+        should_send=delivery.should_send,
+        skip_reason=delivery.skip_reason,
         close=round(latest_point.close, 2),
         change=change,
         change_pct=change_pct,

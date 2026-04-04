@@ -6,6 +6,7 @@ from pydantic import BaseModel, ConfigDict
 
 MarketSignalState = Literal["ABOVE_30", "UNDER_30"]
 MarketSignalEventType = Literal["ENTER_UNDER_30", "EXIT_UNDER_30"]
+MarketDeliverySkipReason = Literal["market_closed"]
 
 
 class MarketIndexSnapshotResponse(BaseModel):
@@ -23,6 +24,9 @@ class MorningBriefingIndicesResponse(BaseModel):
 
 
 class MorningBriefingResponse(BaseModel):
+    target_session_date: date
+    should_send: bool
+    skip_reason: MarketDeliverySkipReason | None
     market_date: date
     generated_at: datetime
     indices: MorningBriefingIndicesResponse
@@ -30,6 +34,9 @@ class MorningBriefingResponse(BaseModel):
 
 class RSICheckResponse(BaseModel):
     symbol: str
+    target_session_date: date
+    should_send: bool
+    skip_reason: MarketDeliverySkipReason | None
     close: float
     change: float
     change_pct: float

@@ -1,7 +1,7 @@
 import os
 import tempfile
 import unittest
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from unittest.mock import patch
 
 from sqlalchemy import create_engine, select
@@ -13,11 +13,19 @@ from services.market_api.app.services import market_service
 
 
 def make_chart_payload(closes: list[float]) -> dict:
+    timestamps: list[int] = []
+    current = date(2026, 3, 2)
+    for _ in closes:
+        while current.weekday() >= 5:
+            current += timedelta(days=1)
+        timestamps.append(int(datetime(current.year, current.month, current.day, tzinfo=timezone.utc).timestamp()))
+        current += timedelta(days=1)
+
     return {
         "chart": {
             "result": [
                 {
-                    "timestamp": [1740787200 + index * 86400 for index in range(len(closes))],
+                    "timestamp": timestamps,
                     "indicators": {
                         "quote": [
                             {
@@ -30,6 +38,42 @@ def make_chart_payload(closes: list[float]) -> dict:
             "error": None,
         }
     }
+
+
+def make_dated_chart_payload(dates: list[date], closes: list[float]) -> dict:
+    if len(dates) != len(closes):
+        raise ValueError("dates and closes must have the same length")
+
+    return {
+        "chart": {
+            "result": [
+                {
+                    "timestamp": [
+                        int(datetime(item.year, item.month, item.day, tzinfo=timezone.utc).timestamp()) for item in dates
+                    ],
+                    "indicators": {
+                        "quote": [
+                            {
+                                "close": closes,
+                            }
+                        ]
+                    },
+                }
+            ],
+            "error": None,
+        }
+    }
+
+
+def make_business_dates(end_date: date, count: int, *, excluded: set[date] | None = None) -> list[date]:
+    excluded = excluded or set()
+    dates: list[date] = []
+    current = end_date
+    while len(dates) < count:
+        if current.weekday() < 5 and current not in excluded:
+            dates.append(current)
+        current -= timedelta(days=1)
+    return list(reversed(dates))
 
 
 XQQI_HTML = """
@@ -190,7 +234,7 @@ class MarketServiceTests(unittest.TestCase):
             [100, 101, 102, 103, 104, 105, 106, 107, 108, 109, 110, 111, 112, 113, 114]
         )
 
-        response = market_service.run_rsi_check(self.db)
+        response = market_service.run_rsi_check(self.db, now_utc=datetime(2026, 3, 20, 20, 30, tzinfo=timezone.utc))
 
         self.assertEqual(response.close, 114.0)
         self.assertEqual(response.change, 1.0)
@@ -214,8 +258,8 @@ class MarketServiceTests(unittest.TestCase):
             make_chart_payload([114, 113, 112, 111, 110, 109, 108, 107, 106, 105, 104, 103, 102, 101, 100]),
         ]
 
-        market_service.run_rsi_check(self.db)
-        response = market_service.run_rsi_check(self.db)
+        market_service.run_rsi_check(self.db, now_utc=datetime(2026, 3, 20, 20, 30, tzinfo=timezone.utc))
+        response = market_service.run_rsi_check(self.db, now_utc=datetime(2026, 3, 20, 20, 30, tzinfo=timezone.utc))
 
         self.assertEqual(response.close, 100.0)
         self.assertEqual(response.change, -1.0)
@@ -235,12 +279,15 @@ class MarketServiceTests(unittest.TestCase):
             make_chart_payload([16000.0, 15880.0]),
         ]
 
-        response = market_service.get_morning_briefing()
+        response = market_service.get_morning_briefing(now_utc=datetime(2026, 3, 3, 21, 0, tzinfo=timezone.utc))
 
         self.assertEqual(response.indices.sp500.symbol, "^GSPC")
         self.assertEqual(response.indices.sp500.change_pct, 1.0)
         self.assertEqual(response.indices.nasdaq.symbol, "^IXIC")
         self.assertEqual(response.indices.nasdaq.change_pct, -0.75)
+        self.assertTrue(response.should_send)
+        self.assertIsNone(response.skip_reason)
+        self.assertEqual(response.target_session_date, date(2026, 3, 3))
 
     @patch.object(market_service.settings, "market_rsi_symbol", "QLD")
     @patch.object(market_service.settings, "market_rsi_threshold", 30.0)
@@ -252,8 +299,8 @@ class MarketServiceTests(unittest.TestCase):
             make_chart_payload([100, 101, 102, 103, 104, 105, 106, 107, 108, 109, 110, 111, 112, 113, 114]),
         ]
 
-        first = market_service.run_rsi_check(self.db)
-        second = market_service.run_rsi_check(self.db)
+        first = market_service.run_rsi_check(self.db, now_utc=datetime(2026, 3, 20, 20, 30, tzinfo=timezone.utc))
+        second = market_service.run_rsi_check(self.db, now_utc=datetime(2026, 3, 20, 20, 30, tzinfo=timezone.utc))
 
         self.assertEqual(first.close, 100.0)
         self.assertEqual(first.change, -1.0)
@@ -271,7 +318,75 @@ class MarketServiceTests(unittest.TestCase):
 
         state = crud.get_signal_state_by_symbol(self.db, "QLD")
         self.assertIsNotNone(state)
-        self.assertEqual(state.market_date, date(2025, 3, 15))
+        self.assertEqual(state.market_date, date(2026, 3, 20))
+
+    @patch.object(market_service.settings, "market_rsi_symbol", "QLD")
+    @patch.object(market_service.settings, "market_rsi_threshold", 30.0)
+    @patch.object(market_service.settings, "market_rsi_period", 14)
+    @patch("services.market_api.app.services.market_service._fetch_chart_payload")
+    def test_rsi_check_skips_full_market_holiday_without_persisting_state(self, fetch_chart_payload: object) -> None:
+        fetch_chart_payload.return_value = make_dated_chart_payload(
+            make_business_dates(date(2026, 4, 2), 15),
+            [float(100 + index) for index in range(15)],
+        )
+
+        response = market_service.run_rsi_check(
+            self.db,
+            now_utc=datetime(2026, 4, 3, 20, 30, tzinfo=timezone.utc),
+        )
+
+        self.assertFalse(response.should_send)
+        self.assertEqual(response.skip_reason, "market_closed")
+        self.assertEqual(response.target_session_date, date(2026, 4, 3))
+        self.assertEqual(response.market_date, date(2026, 4, 2))
+        self.assertIsNone(crud.get_signal_state_by_symbol(self.db, "QLD"))
+        alerts, total = crud.list_signal_alerts(self.db, symbol="QLD")
+        self.assertEqual(total, 0)
+        self.assertEqual(alerts, [])
+
+    @patch("services.market_api.app.services.market_service._fetch_chart_payload")
+    def test_morning_briefing_skips_full_market_holiday(self, fetch_chart_payload: object) -> None:
+        fetch_chart_payload.side_effect = [
+            make_dated_chart_payload([date(2026, 4, 1), date(2026, 4, 2)], [5000.0, 5050.0]),
+            make_dated_chart_payload([date(2026, 4, 1), date(2026, 4, 2)], [16000.0, 15880.0]),
+        ]
+
+        response = market_service.get_morning_briefing(now_utc=datetime(2026, 4, 3, 20, 30, tzinfo=timezone.utc))
+
+        self.assertFalse(response.should_send)
+        self.assertEqual(response.skip_reason, "market_closed")
+        self.assertEqual(response.target_session_date, date(2026, 4, 3))
+        self.assertEqual(response.market_date, date(2026, 4, 2))
+
+    @patch("services.market_api.app.services.market_service._fetch_chart_payload")
+    def test_morning_briefing_raises_on_stale_trading_day_data(self, fetch_chart_payload: object) -> None:
+        fetch_chart_payload.side_effect = [
+            make_dated_chart_payload([date(2026, 3, 31), date(2026, 4, 1)], [5000.0, 5050.0]),
+            make_dated_chart_payload([date(2026, 3, 31), date(2026, 4, 1)], [16000.0, 15880.0]),
+        ]
+
+        with self.assertRaises(market_service.MarketDataError):
+            market_service.get_morning_briefing(now_utc=datetime(2026, 4, 2, 20, 30, tzinfo=timezone.utc))
+
+    @patch.object(market_service.settings, "market_rsi_symbol", "QLD")
+    @patch.object(market_service.settings, "market_rsi_threshold", 30.0)
+    @patch.object(market_service.settings, "market_rsi_period", 14)
+    @patch("services.market_api.app.services.market_service._fetch_chart_payload")
+    def test_rsi_check_allows_early_close_session(self, fetch_chart_payload: object) -> None:
+        fetch_chart_payload.return_value = make_dated_chart_payload(
+            make_business_dates(date(2026, 11, 27), 15, excluded={date(2026, 11, 26)}),
+            [float(100 + index) for index in range(15)],
+        )
+
+        response = market_service.run_rsi_check(
+            self.db,
+            now_utc=datetime(2026, 11, 27, 21, 30, tzinfo=timezone.utc),
+        )
+
+        self.assertTrue(response.should_send)
+        self.assertIsNone(response.skip_reason)
+        self.assertEqual(response.target_session_date, date(2026, 11, 27))
+        self.assertEqual(response.market_date, date(2026, 11, 27))
 
     @patch("services.market_api.app.services.market_service._fetch_text")
     def test_distribution_snapshot_converts_deadline_session_to_kst(self, fetch_text: object) -> None:
