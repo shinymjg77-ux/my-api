@@ -374,6 +374,8 @@ curl -H "X-Job-Secret: <JOB_SHARED_SECRET>" "http://<server-public-ip>/n8n-inter
 - `__JOB_SHARED_SECRET__`
 - `__OPS_ALERT_CHAT_ID__`
 - `__N8N_TELEGRAM_CREDENTIAL_ID__`
+- `__N8N_GOOGLE_SHEETS_CREDENTIAL_ID__`
+- `__OPS_LOG_SPREADSHEET_ID__`
 
 조회 전용 텔레그램 운영 명령 템플릿:
 
@@ -587,8 +589,14 @@ OPS_COMMAND_SHARED_SECRET=replace-with-the-same-backend-ops-command-secret
 OPS_COMMAND_ALLOWED_CHAT_IDS=123456789
 OPS_ALERT_CHAT_ID=123456789
 N8N_TELEGRAM_CREDENTIAL_ID=replace-with-existing-telegram-credential-id
+N8N_GOOGLE_SHEETS_CREDENTIAL_ID=replace-with-existing-google-sheets-credential-id
+OPS_LOG_SPREADSHEET_ID=replace-with-existing-google-spreadsheet-id
 WEBHOOK_URL=https://admin.example.com/
 ```
+
+Google Sheets OAuth credential를 테스트 모드로 발급했다면 refresh token 이 약 7일 뒤 만료될 수 있다.
+현재 운영 Google Sheets credential도 `2026-03-07` 발급 후 `2026-04-07` 점검 시 `invalid_grant` 상태였다.
+이 기능을 운영에 붙이려면 credential 재연결과 함께 OAuth 앱을 production 으로 전환하거나, 장기 보관 가능한 다른 인증 방식을 쓰는 편이 안전하다.
 
 이후 표준 배포 명령은 아래처럼 서버 쪽 스크립트를 SSH로 트리거하는 방식이다.
 

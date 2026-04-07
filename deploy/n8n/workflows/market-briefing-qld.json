@@ -71,7 +71,7 @@
       },
       {
         "parameters": {
-          "jsCode": "const raw = items[0] ?? {};\nconst data = raw.json?.response ?? raw.json ?? {};\nconst error = raw.error ?? raw.json?.error ?? data?.error;\n\nfunction errorDetail() {\n  if (typeof error === 'string' && error) return error;\n  if (error?.message) return error.message;\n  if (raw.json?.message) return raw.json.message;\n  if (data?.message) return data.message;\n  return 'unexpected response';\n}\n\nif (data?.should_send === false && data?.skip_reason === 'market_closed') {\n  return [];\n}\n\nif (error || !data?.indices?.sp500 || !data?.indices?.nasdaq) {\n  return [{\n    json: {\n      message: `market_api 브리핑 호출 실패\\n${errorDetail()}`,\n      briefing_ok: false,\n      should_send: false,\n    },\n  }];\n}\n\nfunction formatNumber(value) {\n  const num = Number(value);\n  if (!Number.isFinite(num)) return 'N/A';\n  return new Intl.NumberFormat('en-US', { maximumFractionDigits: 2 }).format(num);\n}\n\nfunction formatSigned(value) {\n  const num = Number(value);\n  if (!Number.isFinite(num)) return 'N/A';\n  const sign = num > 0 ? '+' : '';\n  return `${sign}${num.toFixed(2)}`;\n}\n\nfunction formatPct(value) {\n  const num = Number(value);\n  if (!Number.isFinite(num)) return 'N/A';\n  const sign = num > 0 ? '+' : '';\n  return `${sign}${num.toFixed(2)}%`;\n}\n\nfunction formatKstNow() {\n  const formatter = new Intl.DateTimeFormat('en-CA', {\n    timeZone: 'Asia/Seoul',\n    year: 'numeric',\n    month: '2-digit',\n    day: '2-digit',\n    hour: '2-digit',\n    minute: '2-digit',\n    hour12: false,\n  });\n  const parts = Object.fromEntries(\n    formatter.formatToParts(new Date()).map((part) => [part.type, part.value]),\n  );\n  return `${parts.year}. ${parts.month}. ${parts.day}. ${parts.hour}:${parts.minute} KST`;\n}\n\nconst sp = data.indices.sp500;\nconst nasdaq = data.indices.nasdaq;\nconst sentAtKst = formatKstNow();\n\nreturn [{\n  json: {\n    briefing_ok: true,\n    should_send: true,\n    message: [\n      '미국 증시 마감 브리핑',\n      `기준일: ${data.market_date ?? data.target_session_date ?? '-'}`,\n      `발송시각: ${sentAtKst}`,\n      `S&P 500: ${formatNumber(sp.close)} (${formatSigned(sp.change)}, ${formatPct(sp.change_pct)})`,\n      `Nasdaq: ${formatNumber(nasdaq.close)} (${formatSigned(nasdaq.change)}, ${formatPct(nasdaq.change_pct)})`,\n    ].join('\\n'),\n  },\n}];\n"
+          "jsCode": "const raw = items[0] ?? {};\nconst data = raw.json?.response ?? raw.json ?? {};\nconst error = raw.error ?? raw.json?.error ?? data?.error;\n\nfunction errorDetail() {\n  if (typeof error === 'string' && error) return error;\n  if (error?.message) return error.message;\n  if (raw.json?.message) return raw.json.message;\n  if (data?.message) return data.message;\n  return 'unexpected response';\n}\n\nif (data?.should_send === false && data?.skip_reason === 'market_closed') {\n  return [];\n}\n\nfunction formatKstNow() {\n  const formatter = new Intl.DateTimeFormat('en-CA', {\n    timeZone: 'Asia/Seoul',\n    year: 'numeric',\n    month: '2-digit',\n    day: '2-digit',\n    hour: '2-digit',\n    minute: '2-digit',\n    hour12: false,\n  });\n  const parts = Object.fromEntries(\n    formatter.formatToParts(new Date()).map((part) => [part.type, part.value]),\n  );\n  return `${parts.year}. ${parts.month}. ${parts.day}. ${parts.hour}:${parts.minute} KST`;\n}\n\nif (error || !data?.indices?.sp500 || !data?.indices?.nasdaq) {\n  const message = `market_api 브리핑 호출 실패\\n${errorDetail()}`;\n  return [{\n    json: {\n      message,\n      briefing_ok: false,\n      should_send: false,\n      logged_at_kst: formatKstNow(),\n      event_type: 'market_briefing_error',\n      symbol: '^GSPC,^IXIC',\n      market_date: data.market_date ?? data.target_session_date ?? '-',\n      message_preview: message,\n      source_workflow: 'My workflow',\n      workflow_execution_id: '',\n    },\n  }];\n}\n\nfunction formatNumber(value) {\n  const num = Number(value);\n  if (!Number.isFinite(num)) return 'N/A';\n  return new Intl.NumberFormat('en-US', { maximumFractionDigits: 2 }).format(num);\n}\n\nfunction formatSigned(value) {\n  const num = Number(value);\n  if (!Number.isFinite(num)) return 'N/A';\n  const sign = num > 0 ? '+' : '';\n  return `${sign}${num.toFixed(2)}`;\n}\n\nfunction formatPct(value) {\n  const num = Number(value);\n  if (!Number.isFinite(num)) return 'N/A';\n  const sign = num > 0 ? '+' : '';\n  return `${sign}${num.toFixed(2)}%`;\n}\n\nconst sp = data.indices.sp500;\nconst nasdaq = data.indices.nasdaq;\nconst sentAtKst = formatKstNow();\nconst message = [\n  '미국 증시 마감 브리핑',\n  `기준일: ${data.market_date ?? data.target_session_date ?? '-'}`,\n  `발송시각: ${sentAtKst}`,\n  `S&P 500: ${formatNumber(sp.close)} (${formatSigned(sp.change)}, ${formatPct(sp.change_pct)})`,\n  `Nasdaq: ${formatNumber(nasdaq.close)} (${formatSigned(nasdaq.change)}, ${formatPct(nasdaq.change_pct)})`,\n].join('\\n');\n\nreturn [{\n  json: {\n    briefing_ok: true,\n    should_send: true,\n    message,\n    logged_at_kst: sentAtKst,\n    event_type: 'market_briefing_sent',\n    symbol: '^GSPC,^IXIC',\n    market_date: data.market_date ?? data.target_session_date ?? '-',\n    message_preview: message,\n    source_workflow: 'My workflow',\n    workflow_execution_id: '',\n  },\n}];\n"
         },
         "type": "n8n-nodes-base.code",
         "typeVersion": 2,
@@ -130,7 +130,7 @@
       },
       {
         "parameters": {
-          "jsCode": "const raw = items[0] ?? {};\nconst data = raw.json?.response ?? raw.json ?? {};\nconst error = raw.error ?? raw.json?.error ?? data?.error;\n\nfunction errorDetail() {\n  if (typeof error === 'string' && error) return error;\n  if (error?.message) return error.message;\n  if (raw.json?.message) return raw.json.message;\n  if (data?.message) return data.message;\n  return 'unexpected response';\n}\n\nif (data?.should_send === false && data?.skip_reason === 'market_closed') {\n  return [];\n}\n\nif (error || typeof data?.rsi === 'undefined' || typeof data?.close === 'undefined') {\n  return [{\n    json: {\n      message: `market_api RSI 체크 실패\\n${errorDetail()}`,\n    },\n  }];\n}\n\nfunction formatNumber(value) {\n  const num = Number(value);\n  if (!Number.isFinite(num)) return 'N/A';\n  return new Intl.NumberFormat('en-US', { maximumFractionDigits: 2 }).format(num);\n}\n\nfunction formatSignedMoney(value) {\n  const num = Number(value);\n  if (!Number.isFinite(num)) return 'N/A';\n  const sign = num > 0 ? '+' : num < 0 ? '-' : '';\n  return `${sign}$${formatNumber(Math.abs(num))}`;\n}\n\nfunction formatSignedPct(value) {\n  const num = Number(value);\n  if (!Number.isFinite(num)) return 'N/A';\n  const sign = num > 0 ? '+' : num < 0 ? '-' : '';\n  return `${sign}${Math.abs(num).toFixed(2)}%`;\n}\n\nfunction formatSignedValue(value) {\n  const num = Number(value);\n  if (!Number.isFinite(num)) return 'N/A';\n  const sign = num > 0 ? '+' : num < 0 ? '-' : '';\n  return `${sign}${Math.abs(num).toFixed(2)}`;\n}\n\nfunction escapeTelegramText(value) {\n  return String(value ?? '-').replace(/_/g, '\\\\_');\n}\n\nconst symbol = data.symbol ?? 'QLD';\nconst rsiValue = Number(data.rsi);\nconst rsiText = Number.isFinite(rsiValue) ? rsiValue.toFixed(2) : 'N/A';\nconst lines = [\n  `${symbol} 가격 & RSI 체크`,\n  `기준일: ${data.market_date ?? data.target_session_date ?? '-'}`,\n  `종가: $${formatNumber(data.close)} (${formatSignedMoney(data.change)}, ${formatSignedPct(data.change_pct)})`,\n  `RSI(14): ${rsiText} (${formatSignedValue(data.rsi_change)})`,\n  `상태: ${escapeTelegramText(data.state ?? '-')}`,\n];\n\nif (data.changed && data.previous_state) {\n  const eventText = data.event === 'ENTER_UNDER_30'\n    ? '재진입 준비 신호'\n    : data.event === 'EXIT_UNDER_30'\n      ? '과매도 해제'\n      : '상태 변경';\n  lines.push(`상태변경: ${escapeTelegramText(data.previous_state)} -> ${escapeTelegramText(data.state ?? '-')}`);\n  lines.push(`이벤트: ${eventText}`);\n}\n\nreturn [{\n  json: {\n    message: lines.join('\\n'),\n  },\n}];\n"
+          "jsCode": "const raw = items[0] ?? {};\nconst data = raw.json?.response ?? raw.json ?? {};\nconst error = raw.error ?? raw.json?.error ?? data?.error;\n\nfunction errorDetail() {\n  if (typeof error === 'string' && error) return error;\n  if (error?.message) return error.message;\n  if (raw.json?.message) return raw.json.message;\n  if (data?.message) return data.message;\n  return 'unexpected response';\n}\n\nif (data?.should_send === false && data?.skip_reason === 'market_closed') {\n  return [];\n}\n\nfunction formatKstNow() {\n  const formatter = new Intl.DateTimeFormat('en-CA', {\n    timeZone: 'Asia/Seoul',\n    year: 'numeric',\n    month: '2-digit',\n    day: '2-digit',\n    hour: '2-digit',\n    minute: '2-digit',\n    hour12: false,\n  });\n  const parts = Object.fromEntries(\n    formatter.formatToParts(new Date()).map((part) => [part.type, part.value]),\n  );\n  return `${parts.year}. ${parts.month}. ${parts.day}. ${parts.hour}:${parts.minute} KST`;\n}\n\nconst symbol = data.symbol ?? 'QLD';\nconst marketDate = data.market_date ?? data.target_session_date ?? '-';\n\nif (error || typeof data?.rsi === 'undefined' || typeof data?.close === 'undefined') {\n  const message = `market_api RSI 체크 실패\\n${errorDetail()}`;\n  return [{\n    json: {\n      message,\n      logged_at_kst: formatKstNow(),\n      event_type: 'market_rsi_error',\n      symbol,\n      market_date: marketDate,\n      message_preview: message,\n      source_workflow: 'My workflow',\n      workflow_execution_id: '',\n    },\n  }];\n}\n\nfunction formatNumber(value) {\n  const num = Number(value);\n  if (!Number.isFinite(num)) return 'N/A';\n  return new Intl.NumberFormat('en-US', { maximumFractionDigits: 2 }).format(num);\n}\n\nfunction formatSignedMoney(value) {\n  const num = Number(value);\n  if (!Number.isFinite(num)) return 'N/A';\n  const sign = num > 0 ? '+' : num < 0 ? '-' : '';\n  return `${sign}$${formatNumber(Math.abs(num))}`;\n}\n\nfunction formatSignedPct(value) {\n  const num = Number(value);\n  if (!Number.isFinite(num)) return 'N/A';\n  const sign = num > 0 ? '+' : num < 0 ? '-' : '';\n  return `${sign}${Math.abs(num).toFixed(2)}%`;\n}\n\nfunction formatSignedValue(value) {\n  const num = Number(value);\n  if (!Number.isFinite(num)) return 'N/A';\n  const sign = num > 0 ? '+' : num < 0 ? '-' : '';\n  return `${sign}${Math.abs(num).toFixed(2)}`;\n}\n\nfunction escapeTelegramText(value) {\n  return String(value ?? '-').replace(/_/g, '\\\\_');\n}\n\nconst rsiValue = Number(data.rsi);\nconst rsiText = Number.isFinite(rsiValue) ? rsiValue.toFixed(2) : 'N/A';\nconst lines = [\n  `${symbol} 가격 & RSI 체크`,\n  `기준일: ${marketDate}`,\n  `종가: $${formatNumber(data.close)} (${formatSignedMoney(data.change)}, ${formatSignedPct(data.change_pct)})`,\n  `RSI(14): ${rsiText} (${formatSignedValue(data.rsi_change)})`,\n  `상태: ${escapeTelegramText(data.state ?? '-')}`,\n];\n\nif (data.changed && data.previous_state) {\n  const eventText = data.event === 'ENTER_UNDER_30'\n    ? '재진입 준비 신호'\n    : data.event === 'EXIT_UNDER_30'\n      ? '과매도 해제'\n      : '상태 변경';\n  lines.push(`상태변경: ${escapeTelegramText(data.previous_state)} -> ${escapeTelegramText(data.state ?? '-')}`);\n  lines.push(`이벤트: ${eventText}`);\n}\n\nconst message = lines.join('\\n');\nreturn [{\n  json: {\n    message,\n    logged_at_kst: formatKstNow(),\n    event_type: 'market_rsi_sent',\n    symbol,\n    market_date: marketDate,\n    message_preview: message,\n    source_workflow: 'My workflow',\n    workflow_execution_id: '',\n  },\n}];\n"
         },
         "type": "n8n-nodes-base.code",
         "typeVersion": 2,
@@ -159,6 +159,214 @@
           "telegramApi": {
             "id": "__N8N_TELEGRAM_CREDENTIAL_ID__",
             "name": "Telegram account"
+          }
+        }
+      },
+      {
+        "parameters": {
+          "operation": "append",
+          "documentId": {
+            "mode": "id",
+            "value": "__OPS_LOG_SPREADSHEET_ID__"
+          },
+          "sheetName": {
+            "mode": "name",
+            "value": "market_events"
+          },
+          "columns": {
+            "mappingMode": "autoMapInputData",
+            "value": {},
+            "matchingColumns": [],
+            "schema": [
+              {
+                "id": "logged_at_kst",
+                "displayName": "logged_at_kst",
+                "required": false,
+                "defaultMatch": false,
+                "display": true,
+                "type": "string",
+                "canBeUsedToMatch": true
+              },
+              {
+                "id": "event_type",
+                "displayName": "event_type",
+                "required": false,
+                "defaultMatch": false,
+                "display": true,
+                "type": "string",
+                "canBeUsedToMatch": true
+              },
+              {
+                "id": "symbol",
+                "displayName": "symbol",
+                "required": false,
+                "defaultMatch": false,
+                "display": true,
+                "type": "string",
+                "canBeUsedToMatch": true
+              },
+              {
+                "id": "market_date",
+                "displayName": "market_date",
+                "required": false,
+                "defaultMatch": false,
+                "display": true,
+                "type": "string",
+                "canBeUsedToMatch": true
+              },
+              {
+                "id": "message_preview",
+                "displayName": "message_preview",
+                "required": false,
+                "defaultMatch": false,
+                "display": true,
+                "type": "string",
+                "canBeUsedToMatch": true
+              },
+              {
+                "id": "source_workflow",
+                "displayName": "source_workflow",
+                "required": false,
+                "defaultMatch": false,
+                "display": true,
+                "type": "string",
+                "canBeUsedToMatch": true
+              },
+              {
+                "id": "workflow_execution_id",
+                "displayName": "workflow_execution_id",
+                "required": false,
+                "defaultMatch": false,
+                "display": true,
+                "type": "string",
+                "canBeUsedToMatch": true
+              }
+            ]
+          },
+          "options": {
+            "cellFormat": "USER_ENTERED",
+            "locationDefine": {
+              "values": {}
+            },
+            "useAppend": true
+          }
+        },
+        "type": "n8n-nodes-base.googleSheets",
+        "typeVersion": 4.7,
+        "position": [
+          0,
+          -224
+        ],
+        "id": "b2207210-7ca5-45f7-95be-b125f4d26420",
+        "name": "Append Briefing Event Row",
+        "credentials": {
+          "googleSheetsOAuth2Api": {
+            "id": "__N8N_GOOGLE_SHEETS_CREDENTIAL_ID__",
+            "name": "Google Sheets account"
+          }
+        }
+      },
+      {
+        "parameters": {
+          "operation": "append",
+          "documentId": {
+            "mode": "id",
+            "value": "__OPS_LOG_SPREADSHEET_ID__"
+          },
+          "sheetName": {
+            "mode": "name",
+            "value": "market_events"
+          },
+          "columns": {
+            "mappingMode": "autoMapInputData",
+            "value": {},
+            "matchingColumns": [],
+            "schema": [
+              {
+                "id": "logged_at_kst",
+                "displayName": "logged_at_kst",
+                "required": false,
+                "defaultMatch": false,
+                "display": true,
+                "type": "string",
+                "canBeUsedToMatch": true
+              },
+              {
+                "id": "event_type",
+                "displayName": "event_type",
+                "required": false,
+                "defaultMatch": false,
+                "display": true,
+                "type": "string",
+                "canBeUsedToMatch": true
+              },
+              {
+                "id": "symbol",
+                "displayName": "symbol",
+                "required": false,
+                "defaultMatch": false,
+                "display": true,
+                "type": "string",
+                "canBeUsedToMatch": true
+              },
+              {
+                "id": "market_date",
+                "displayName": "market_date",
+                "required": false,
+                "defaultMatch": false,
+                "display": true,
+                "type": "string",
+                "canBeUsedToMatch": true
+              },
+              {
+                "id": "message_preview",
+                "displayName": "message_preview",
+                "required": false,
+                "defaultMatch": false,
+                "display": true,
+                "type": "string",
+                "canBeUsedToMatch": true
+              },
+              {
+                "id": "source_workflow",
+                "displayName": "source_workflow",
+                "required": false,
+                "defaultMatch": false,
+                "display": true,
+                "type": "string",
+                "canBeUsedToMatch": true
+              },
+              {
+                "id": "workflow_execution_id",
+                "displayName": "workflow_execution_id",
+                "required": false,
+                "defaultMatch": false,
+                "display": true,
+                "type": "string",
+                "canBeUsedToMatch": true
+              }
+            ]
+          },
+          "options": {
+            "cellFormat": "USER_ENTERED",
+            "locationDefine": {
+              "values": {}
+            },
+            "useAppend": true
+          }
+        },
+        "type": "n8n-nodes-base.googleSheets",
+        "typeVersion": 4.7,
+        "position": [
+          720,
+          -80
+        ],
+        "id": "bfad5412-a099-4d81-b0d5-a11aecff1ce4",
+        "name": "Append RSI Event Row",
+        "credentials": {
+          "googleSheetsOAuth2Api": {
+            "id": "__N8N_GOOGLE_SHEETS_CREDENTIAL_ID__",
+            "name": "Google Sheets account"
           }
         }
       }
@@ -198,6 +406,11 @@
               "node": "Prepare RSI Request",
               "type": "main",
               "index": 0
+            },
+            {
+              "node": "Append Briefing Event Row",
+              "type": "main",
+              "index": 0
             }
           ]
         ]
@@ -229,6 +442,11 @@
           [
             {
               "node": "Send a text message",
+              "type": "main",
+              "index": 0
+            },
+            {
+              "node": "Append RSI Event Row",
               "type": "main",
               "index": 0
             }
