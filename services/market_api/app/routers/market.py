@@ -45,6 +45,20 @@ def run_distribution_deadline_check(
         ) from exc
 
 
+@router.post("/jobs/distribution-deadline-preview", response_model=schemas.DistributionDeadlineCheckResponse)
+def run_distribution_deadline_preview(
+    _: str = Depends(require_job_secret),
+    db: Session = Depends(get_db),
+) -> schemas.DistributionDeadlineCheckResponse:
+    try:
+        return market_service.run_distribution_deadline_preview(db)
+    except market_service.MarketDataError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="Failed to calculate distribution deadline signal",
+        ) from exc
+
+
 @router.get("/status/current", response_model=schemas.SignalStateCurrentResponse)
 def get_current_signal_status(
     _: str = Depends(require_job_secret),

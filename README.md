@@ -116,7 +116,7 @@ OCI Ubuntu 서버 배포 절차와 운영 자동화 문서는 아래를 참고�
 - 드리프트 확인: `./scripts/check_release_drift.sh <ssh-host>`
 - `n8n` 템플릿: `deploy/n8n/workflows/ops-command-telegram.json`, `deploy/n8n/workflows/ops-alert.json`, `deploy/n8n/workflows/neos-distribution-deadline.json`, `deploy/n8n/workflows/neos-distribution-health.json`
   - `neos-distribution-deadline.json`: `05:30 KST` 배당 알림 발송 전용
-  - `neos-distribution-health.json`: `10분` 주기 배당 일정 조회 실패/복구 운영 알림 담당
+  - `neos-distribution-health.json`: `10분` 주기 read-only preview 호출로 배당 일정 조회 실패/복구 운영 알림 담당
 
 ## GitHub 업로드 전 주의
 

@@ -451,6 +451,30 @@ class MarketServiceTests(unittest.TestCase):
 
     @patch.object(market_service.settings, "market_distribution_symbols", "XQQI,QQQI")
     @patch("services.market_api.app.services.market_service._fetch_text")
+    def test_distribution_deadline_preview_does_not_consume_alert_state(self, fetch_text: object) -> None:
+        fetch_text.side_effect = self._fake_fetch_text
+        now_utc = datetime(2026, 4, 6, 15, 0, tzinfo=timezone.utc)
+
+        preview = market_service.run_distribution_deadline_preview(self.db, now_utc=now_utc)
+        funds_preview = {item.symbol: item for item in preview.funds}
+
+        self.assertTrue(funds_preview["XQQI"].alert_due)
+        self.assertFalse(funds_preview["QQQI"].alert_due)
+        self.assertIsNone(crud.get_distribution_deadline_state_by_symbol(self.db, "XQQI"))
+        alerts_after_preview = list(self.db.scalars(select(models.DistributionDeadlineAlert)).all())
+        self.assertEqual(alerts_after_preview, [])
+
+        check = market_service.run_distribution_deadline_check(self.db, now_utc=now_utc)
+        funds_check = {item.symbol: item for item in check.funds}
+
+        self.assertTrue(funds_check["XQQI"].alert_due)
+        self.assertFalse(funds_check["QQQI"].alert_due)
+        alerts_after_check = list(self.db.scalars(select(models.DistributionDeadlineAlert)).all())
+        self.assertEqual(len(alerts_after_check), 1)
+        self.assertEqual(alerts_after_check[0].symbol, "XQQI")
+
+    @patch.object(market_service.settings, "market_distribution_symbols", "XQQI,QQQI")
+    @patch("services.market_api.app.services.market_service._fetch_text")
     def test_distribution_deadline_check_does_not_alert_on_kst_deadline_morning(self, fetch_text: object) -> None:
         fetch_text.side_effect = self._fake_fetch_text
 

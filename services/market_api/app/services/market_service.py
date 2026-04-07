@@ -424,6 +424,54 @@ def _next_distribution_snapshot(
     return min(candidates, key=lambda item: (item.ex_dividend_date, item.deadline_kst_date))
 
 
+def _build_distribution_deadline_response(
+    db: Session,
+    *,
+    checked_at: datetime,
+    mutate_state: bool,
+) -> schemas.DistributionDeadlineCheckResponse:
+    funds: list[schemas.DistributionDeadlineFundResponse] = []
+
+    for symbol in get_distribution_symbols():
+        snapshot = _next_distribution_snapshot(symbol, now_utc=checked_at)
+        existing_state = crud.get_distribution_deadline_state_by_symbol(db, symbol)
+        alert_key = f"{symbol}:{snapshot.ex_dividend_date.isoformat()}:{snapshot.alert_kst_date.isoformat()}"
+        alert_due = snapshot.is_alert_day_kst and (
+            existing_state is None or existing_state.last_alert_key != alert_key
+        )
+
+        if mutate_state:
+            last_alert_key = (
+                alert_key if alert_due else existing_state.last_alert_key if existing_state is not None else None
+            )
+            crud.upsert_distribution_deadline_state(
+                db,
+                symbol=symbol,
+                ex_dividend_date=snapshot.ex_dividend_date,
+                alert_kst_date=snapshot.alert_kst_date,
+                deadline_kst_date=snapshot.deadline_kst_date,
+                checked_at=checked_at,
+                last_alert_key=last_alert_key,
+            )
+
+            if alert_due:
+                crud.create_distribution_deadline_alert(
+                    db,
+                    symbol=symbol,
+                    ex_dividend_date=snapshot.ex_dividend_date,
+                    alert_kst_date=snapshot.alert_kst_date,
+                    deadline_kst_date=snapshot.deadline_kst_date,
+                    distribution_amount=snapshot.distribution_amount,
+                )
+
+        funds.append(snapshot.model_copy(update={"alert_due": alert_due}))
+
+    return schemas.DistributionDeadlineCheckResponse(
+        generated_at=checked_at,
+        funds=funds,
+    )
+
+
 def get_morning_briefing(*, now_utc: datetime | None = None) -> schemas.MorningBriefingResponse:
     current_utc = _normalize_now_utc(now_utc)
     symbol_map = _briefing_symbols()
@@ -542,43 +590,22 @@ def run_distribution_deadline_check(
     *,
     now_utc: datetime | None = None,
 ) -> schemas.DistributionDeadlineCheckResponse:
-    checked_at = now_utc or datetime.now(timezone.utc)
-    funds: list[schemas.DistributionDeadlineFundResponse] = []
+    checked_at = _normalize_now_utc(now_utc)
+    return _build_distribution_deadline_response(
+        db,
+        checked_at=checked_at,
+        mutate_state=True,
+    )
 
-    for symbol in get_distribution_symbols():
-        snapshot = _next_distribution_snapshot(symbol, now_utc=checked_at)
-        existing_state = crud.get_distribution_deadline_state_by_symbol(db, symbol)
-        alert_key = f"{symbol}:{snapshot.ex_dividend_date.isoformat()}:{snapshot.alert_kst_date.isoformat()}"
-        alert_due = snapshot.is_alert_day_kst and (
-            existing_state is None or existing_state.last_alert_key != alert_key
-        )
-        last_alert_key = (
-            alert_key if alert_due else existing_state.last_alert_key if existing_state is not None else None
-        )
 
-        crud.upsert_distribution_deadline_state(
-            db,
-            symbol=symbol,
-            ex_dividend_date=snapshot.ex_dividend_date,
-            alert_kst_date=snapshot.alert_kst_date,
-            deadline_kst_date=snapshot.deadline_kst_date,
-            checked_at=checked_at,
-            last_alert_key=last_alert_key,
-        )
-
-        if alert_due:
-            crud.create_distribution_deadline_alert(
-                db,
-                symbol=symbol,
-                ex_dividend_date=snapshot.ex_dividend_date,
-                alert_kst_date=snapshot.alert_kst_date,
-                deadline_kst_date=snapshot.deadline_kst_date,
-                distribution_amount=snapshot.distribution_amount,
-            )
-
-        funds.append(snapshot.model_copy(update={"alert_due": alert_due}))
-
-    return schemas.DistributionDeadlineCheckResponse(
-        generated_at=checked_at,
-        funds=funds,
+def run_distribution_deadline_preview(
+    db: Session,
+    *,
+    now_utc: datetime | None = None,
+) -> schemas.DistributionDeadlineCheckResponse:
+    checked_at = _normalize_now_utc(now_utc)
+    return _build_distribution_deadline_response(
+        db,
+        checked_at=checked_at,
+        mutate_state=False,
     )
